@@ -24,7 +24,32 @@ const RESEARCH_KEYWORDS = [
   '商业','用户','技术','平台','应用','创业','估值','增长','出海','SaaS','B端','C端',
   '供应链','消费','医疗','教育','金融','能源','汽车','硬件','软件','机器人','大模型',
   'agent','陪伴','情感','电商','游戏','内容','社交','直播','测算','规模','二手','戒指',
+  'VR','AR','IoT','ESG','IPO','VC','PE','估值','营收','GMV','DAU','MAU',
+  '充电','无人','机器','健康','美容','养老','宠物','农业','物流',
 ]
+
+// Only known greetings/reactions are chitchat — never block short industry terms
+const CHITCHAT_PATTERNS = [
+  /^[你您]好[啊呀！!]?$/,
+  /^谢谢[你您啊呀！!]?$/,
+  /^感谢[你您]?[！!]?$/,
+  /^[嗯哦哈]{1,5}[啊呀！!。.]*$/,
+  /^[哈]{2,}[哈！!]*$/,
+  /^棒[极了]?[！!]?$/,
+  /^[赞棒好][！!]*$/,
+  /^厉害[了！!]?$/,
+  /^不错[！!]?$/,
+]
+
+function isChitchat(text: string): boolean {
+  const t = text.trim()
+  if (!t) return true
+  if (t.length >= 10) return false
+  if (RESEARCH_KEYWORDS.some(kw => t.toLowerCase().includes(kw.toLowerCase()))) return false
+  if (/[a-zA-Z]{3,}/.test(t)) return false
+  return CHITCHAT_PATTERNS.some(p => p.test(t))
+}
+
 const CHITCHAT_REPLIES = [
   '你好你好！汪！🐾',
   '谢谢你，你真好！尾巴摇摆中...🐕',
@@ -32,13 +57,6 @@ const CHITCHAT_REPLIES = [
   '好开心见到你！我们开始研究吧？🐾',
   '汪！收到！有什么研究方向可以告诉我～',
 ]
-
-function isChitchat(text: string): boolean {
-  if (text.length >= 10) return false
-  if (RESEARCH_KEYWORDS.some(kw => text.toLowerCase().includes(kw.toLowerCase()))) return false
-  if (/[a-zA-Z]{3,}/.test(text)) return false
-  return true
-}
 
 function randomChitchatReply(): string {
   return CHITCHAT_REPLIES[Math.floor(Math.random() * CHITCHAT_REPLIES.length)]
@@ -52,6 +70,7 @@ export default function MarketSizingPage() {
   const [animState, setAnimState] = useState<AnimationState>('idle')
   const [report, setReport] = useState<Report | null>(null)
   const [currentQuery, setCurrentQuery] = useState('')
+  const [errorMsg, setErrorMsg] = useState('')
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
   // Active (unanswered) follow-up question shown as bubble
@@ -59,7 +78,7 @@ export default function MarketSizingPage() {
   // Completed exchanges shown as chat history above the active bubble
   const [chatLog, setChatLog] = useState<LogEntry[]>([])
 
-  // Resolver that the mock API awaits — called when user submits their answer
+  // Resolver that the API awaits — called when user submits their answer
   const answerResolverRef = useRef<((answer: string) => void) | null>(null)
 
   useEffect(() => {
@@ -86,7 +105,7 @@ export default function MarketSizingPage() {
     setInput('')
     console.log('[Hound] market handleSubmit:', value)
 
-    // If the mock API is waiting for a follow-up answer, resolve the promise
+    // If the API is waiting for a follow-up answer, resolve the promise
     if (answerResolverRef.current) {
       console.log('[Hound] resolving follow-up answer')
       setCurrentFollowUp(null)
@@ -102,7 +121,6 @@ export default function MarketSizingPage() {
     if (isChitchat(value)) {
       console.log('[Hound] mode: chitchat')
       setChatLog([{ role: 'user', content: value }, { role: 'hound', content: randomChitchatReply() }])
-      setPhase('idle')
       return
     }
 
@@ -111,6 +129,7 @@ export default function MarketSizingPage() {
     setCurrentQuery(value)
     setPhase('collecting')
     setReport(null)
+    setErrorMsg('')
     setChatLog([{ role: 'user', content: value }])
     setAnimState('thinking')
 
@@ -162,6 +181,7 @@ export default function MarketSizingPage() {
         setAnimState('idle')
         setCurrentFollowUp(null)
         answerResolverRef.current = null
+        setErrorMsg(msg)
       },
     }).catch((e) => {
       console.error('[Hound] generateMarketSizingReport threw:', e)
@@ -169,6 +189,9 @@ export default function MarketSizingPage() {
       setAnimState('idle')
       setCurrentFollowUp(null)
       answerResolverRef.current = null
+      if (!errorMsg) {
+        setErrorMsg(e?.message || '连接后端失败，请检查服务是否运行')
+      }
     })
   }
 
@@ -181,6 +204,7 @@ export default function MarketSizingPage() {
     setCurrentFollowUp(null)
     answerResolverRef.current = null
     setInput('')
+    setErrorMsg('')
   }
 
   function handleExport() {
@@ -218,7 +242,14 @@ export default function MarketSizingPage() {
           <div className="flex-1 overflow-y-auto">
             <div className="max-w-3xl mx-auto px-4 md:px-6 pt-6 md:pt-8 pb-32 space-y-4">
 
-              {phase === 'idle' && !report && <EmptyState />}
+              {phase === 'idle' && !report && chatLog.length === 0 && !errorMsg && <EmptyState />}
+
+              {/* Error banner */}
+              {errorMsg && (
+                <div className="animate-fade-in rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 font-inter leading-relaxed">
+                  <span className="font-medium">连接出错：</span>{errorMsg}
+                </div>
+              )}
 
               {/* Completed Q&A history */}
               {chatLog.length > 0 && (

@@ -1,6 +1,8 @@
 import type { Report, ProgressStep, AnimationState, FollowUpQuestion } from './types'
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
+// Log once on module load so you can see the URL in browser console
+console.log('[Hound] API_BASE:', API_BASE)
 
 // ─── Shared SSE helper ───────────────────────────────────────────────────────
 interface SseHandlers {
@@ -12,16 +14,32 @@ interface SseHandlers {
 
 function listenSse(url: string, handlers: SseHandlers): Promise<void> {
   return new Promise((resolve, reject) => {
+    console.log('[Hound] SSE connecting to:', url)
     const es = new EventSource(url)
-    let settled = false  // true once 'done' received; blocks onerror from overriding
+    let settled = false
 
     let reportContent = ''
     let reviewData = { score: 7, pass: true, suggestions: [] as string[], issues: [] as string[] }
     let citations: Report['citations'] = []
 
+    // 60-second hard timeout: prevents input from being stuck disabled forever
+    const timeoutId = setTimeout(() => {
+      if (settled) return
+      settled = true
+      es.close()
+      const msg = '后端响应超时（60s）。请确认 Railway 服务正常运行，或检查 Vercel 环境变量 NEXT_PUBLIC_API_URL 是否指向正确的后端地址。'
+      console.error('[Hound] SSE timeout:', url)
+      handlers.onError?.(msg)
+      reject(new Error(msg))
+    }, 60_000)
+
     es.onmessage = (e) => {
       let data: Record<string, unknown>
-      try { data = JSON.parse(e.data) } catch { return }
+      try { data = JSON.parse(e.data) } catch {
+        console.warn('[Hound] SSE unparseable message:', e.data)
+        return
+      }
+      console.log('[Hound] SSE event:', data.type, data.label ?? data.state ?? '')
 
       switch (data.type) {
         case 'step':
@@ -45,6 +63,7 @@ function listenSse(url: string, handlers: SseHandlers): Promise<void> {
           citations = (data.items as Report['citations']) ?? []
           break
         case 'done':
+          clearTimeout(timeoutId)
           settled = true
           es.close()
           handlers.onReport({ content: reportContent, review: reviewData, citations })
@@ -52,9 +71,11 @@ function listenSse(url: string, handlers: SseHandlers): Promise<void> {
           break
         case 'error': {
           if (settled) break
+          clearTimeout(timeoutId)
           settled = true
           es.close()
-          const msg = data.message as string
+          const msg = (data.message as string) || '后端处理出错'
+          console.error('[Hound] SSE error event:', msg)
           handlers.onError?.(msg)
           reject(new Error(msg))
           break
@@ -62,12 +83,14 @@ function listenSse(url: string, handlers: SseHandlers): Promise<void> {
       }
     }
 
-    // onerror fires when server closes connection — ignore if done already received
-    es.onerror = () => {
+    // onerror fires when connection fails or server closes without 'done'
+    es.onerror = (e) => {
       if (settled) return
+      clearTimeout(timeoutId)
       settled = true
       es.close()
-      const msg = '连接后端失败，请确认 api_server.py 已启动'
+      const msg = `连接后端失败。当前 API_BASE: ${API_BASE}。请确认：① Vercel 已设置 NEXT_PUBLIC_API_URL 环境变量 ② Railway 服务正在运行`
+      console.error('[Hound] SSE onerror:', e, 'url:', url)
       handlers.onError?.(msg)
       reject(new Error(msg))
     }
@@ -107,18 +130,36 @@ export async function generateMarketSizingReport(
   let companyInfo = ''
 
   // Collect follow-up Q&A (up to 3 rounds)
-  // Don't call onStep here — page shows dots via phase='collecting'; only SSE events use onStep
   for (let round = 0; round < 3; round++) {
     opts.onAnimationState('thinking')
 
-    const res: { ready: boolean; summary?: string; question?: string } = await fetch(
-      `${API_BASE}/api/market-sizing/collect`,
-      {
+    const collectUrl = `${API_BASE}/api/market-sizing/collect`
+    console.log(`[Hound] collect round ${round + 1}:`, collectUrl)
+
+    let res: { ready: boolean; summary?: string; question?: string }
+    try {
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 30_000)
+      const response = await fetch(collectUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ input: initialInput, history }),
-      },
-    ).then((r) => r.json())
+        signal: controller.signal,
+      })
+      clearTimeout(timeoutId)
+      if (!response.ok) {
+        throw new Error(`后端返回 HTTP ${response.status}`)
+      }
+      res = await response.json()
+      console.log('[Hound] collect response:', res)
+    } catch (e: unknown) {
+      const msg = e instanceof Error
+        ? (e.name === 'AbortError' ? '信息收集请求超时（30s）' : `信息收集失败：${e.message}`)
+        : '信息收集失败：网络错误'
+      console.error('[Hound] collect error:', e)
+      opts.onError?.(`${msg}。当前 API_BASE: ${API_BASE}`)
+      throw e
+    }
 
     if (res.ready && res.summary) {
       companyInfo = res.summary
@@ -151,11 +192,13 @@ export async function generateMarketSizingReport(
 
 // ─── Follow-up chat ───────────────────────────────────────────────────────────
 export async function followUpChat(query: string, report: string): Promise<string> {
+  console.log('[Hound] followUpChat:', query.slice(0, 30))
   const res = await fetch(`${API_BASE}/api/followup`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ query, report }),
   })
+  if (!res.ok) throw new Error(`followup HTTP ${res.status}`)
   const data = await res.json()
   return data.answer as string
 }

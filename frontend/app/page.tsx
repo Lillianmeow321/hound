@@ -19,7 +19,33 @@ const RESEARCH_KEYWORDS = [
   '商业','用户','技术','平台','应用','创业','估值','增长','出海','SaaS','B端','C端',
   '供应链','消费','医疗','教育','金融','能源','汽车','硬件','软件','机器人','大模型',
   'agent','陪伴','情感','电商','游戏','内容','社交','直播','二手','戒指',
+  'VR','AR','IoT','ESG','IPO','VC','PE','估值','营收','GMV','DAU','MAU',
+  '充电','无人','机器','医疗','健康','美容','养老','宠物','农业','物流',
 ]
+
+// Only known greetings/reactions are chitchat — never block short industry terms
+const CHITCHAT_PATTERNS = [
+  /^[你您]好[啊呀！!]?$/,
+  /^谢谢[你您啊呀！!]?$/,
+  /^感谢[你您]?[！!]?$/,
+  /^[嗯哦哈]{1,5}[啊呀！!。.]*$/,
+  /^[哈]{2,}[哈！!]*$/,
+  /^棒[极了]?[！!]?$/,
+  /^[赞棒好][！!]*$/,
+  /^厉害[了！!]?$/,
+  /^不错[！!]?$/,
+]
+
+function isChitchat(text: string): boolean {
+  const t = text.trim()
+  if (!t) return true
+  if (t.length >= 10) return false
+  if (RESEARCH_KEYWORDS.some(kw => t.toLowerCase().includes(kw.toLowerCase()))) return false
+  if (/[a-zA-Z]{3,}/.test(t)) return false
+  // Only positive-match known chitchat patterns; don't block by length alone
+  return CHITCHAT_PATTERNS.some(p => p.test(t))
+}
+
 const CHITCHAT_REPLIES = [
   '你好你好！汪！🐾',
   '谢谢你，你真好！尾巴摇摆中...🐕',
@@ -27,13 +53,6 @@ const CHITCHAT_REPLIES = [
   '好开心见到你！我们开始研究吧？🐾',
   '汪！收到！有什么研究方向可以告诉我～',
 ]
-
-function isChitchat(text: string): boolean {
-  if (text.length >= 10) return false
-  if (RESEARCH_KEYWORDS.some(kw => text.toLowerCase().includes(kw.toLowerCase()))) return false
-  if (/[a-zA-Z]{3,}/.test(text)) return false
-  return true
-}
 
 function randomChitchatReply(): string {
   return CHITCHAT_REPLIES[Math.floor(Math.random() * CHITCHAT_REPLIES.length)]
@@ -58,6 +77,7 @@ export default function CompetitivePage() {
   const [animState, setAnimState] = useState<AnimationState>('idle')
   const [report, setReport] = useState<Report | null>(null)
   const [currentQuery, setCurrentQuery] = useState('')
+  const [errorMsg, setErrorMsg] = useState('')
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
   const [chatHistory, setChatHistory] = useState<Array<{ role: string; content: string }>>([])
@@ -84,6 +104,7 @@ export default function CompetitivePage() {
     if (!input.trim() || phase === 'loading') return
     const query = input.trim()
     setInput('')
+    setErrorMsg('')
     console.log('[Hound] handleSubmit:', query)
 
     /* Follow-up on existing report */
@@ -97,6 +118,7 @@ export default function CompetitivePage() {
         setChatHistory(h => [...h, { role: 'user', content: query }, { role: 'assistant', content: answer }])
       } catch (e) {
         console.error('[Hound] followup error:', e)
+        setErrorMsg(`追问失败：${e instanceof Error ? e.message : '未知错误'}`)
       }
       setPhase('done')
       setAnimState('idle')
@@ -107,7 +129,6 @@ export default function CompetitivePage() {
     if (isChitchat(query)) {
       console.log('[Hound] mode: chitchat')
       setChatHistory(h => [...h, { role: 'user', content: query }, { role: 'assistant', content: randomChitchatReply() }])
-      setPhase('done')
       return
     }
 
@@ -120,7 +141,10 @@ export default function CompetitivePage() {
     setAnimState('idle')
 
     await generateCompetitiveReport(query, {
-      onStep: step => { console.log('[Hound] step:', step.label); setProgressStep(step) },
+      onStep: step => {
+        console.log('[Hound] step:', step.label)
+        setProgressStep(step)
+      },
       onAnimationState: s => setAnimState(s),
       onReport: r => {
         console.log('[Hound] report received')
@@ -142,11 +166,15 @@ export default function CompetitivePage() {
         console.error('[Hound] API error:', msg)
         setPhase('idle')
         setAnimState('idle')
+        setErrorMsg(msg)
       },
     }).catch((e) => {
       console.error('[Hound] generateCompetitiveReport threw:', e)
       setPhase('idle')
       setAnimState('idle')
+      if (!errorMsg) {
+        setErrorMsg(e?.message || '连接后端失败，请检查服务是否运行')
+      }
     })
   }
 
@@ -157,6 +185,7 @@ export default function CompetitivePage() {
     setActiveId(conv.id)
     setChatHistory([])
     setInput('')
+    setErrorMsg('')
   }
 
   function handleExport() {
@@ -187,12 +216,20 @@ export default function CompetitivePage() {
         <main className="flex-1 flex flex-col overflow-hidden">
           <div className="flex-1 overflow-y-auto">
             <div className="max-w-3xl mx-auto px-4 md:px-6 pt-6 md:pt-8 pb-32">
-              {phase === 'idle' && !report && chatHistory.length === 0 && <EmptyState />}
+              {phase === 'idle' && !report && chatHistory.length === 0 && !errorMsg && <EmptyState />}
+
+              {/* Error banner */}
+              {errorMsg && (
+                <div className="animate-fade-in mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 font-inter leading-relaxed">
+                  <span className="font-medium">连接出错：</span>{errorMsg}
+                </div>
+              )}
+
               {phase === 'loading' && (
                 <>
                   {currentQuery && (
                     <div className="flex justify-end mb-6 animate-fade-in">
-                      <div className="bg-ink-green/8 border border-ink-green/15 rounded-2xl rounded-tr-sm px-4 py-3 text-sm font-inter text-ink-black max-w-lg">
+                      <div className="bg-ink-green/[0.07] border border-ink-green/15 rounded-2xl rounded-tr-sm px-4 py-3 text-sm font-inter text-ink-black max-w-lg">
                         {currentQuery}
                       </div>
                     </div>
@@ -213,7 +250,7 @@ export default function CompetitivePage() {
                   {chatHistory.map((m, i) => (
                     <div key={i} className={`animate-fade-in ${m.role === 'user' ? 'flex justify-end' : ''}`}>
                       {m.role === 'user' ? (
-                        <div className="bg-ink-green/8 border border-ink-green/15 rounded-2xl rounded-tr-sm
+                        <div className="bg-ink-green/[0.07] border border-ink-green/15 rounded-2xl rounded-tr-sm
                           px-4 py-3 text-sm font-inter text-ink-black max-w-lg">
                           {m.content}
                         </div>
