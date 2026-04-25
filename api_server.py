@@ -255,12 +255,15 @@ async def competitive_stream(query: str):
             queue: asyncio.Queue = asyncio.Queue()
 
             async def retrieve_one(dim):
-                result = await asyncio.to_thread(_retrieve_one_dimension, dim)
+                try:
+                    result = await asyncio.to_thread(_retrieve_one_dimension, dim)
+                except Exception:
+                    result = (dim["name"], [])  # empty on error, avoids hanging
                 await queue.put(result)
 
-            gather_task = asyncio.create_task(
-                asyncio.gather(*[retrieve_one(d) for d in plan["dimensions"]])
-            )
+            # ensure_future schedules each coroutine as an independent Task
+            for d in plan["dimensions"]:
+                asyncio.ensure_future(retrieve_one(d))
 
             retrieved = {}
             pending = n
@@ -271,10 +274,7 @@ async def competitive_stream(query: str):
                     yield sse({"type": "dim_done", "name": dim_name})
                     pending -= 1
                 except asyncio.TimeoutError:
-                    if gather_task.done():
-                        break
                     yield ": ka\n\n"
-            await gather_task
 
             context = ""
             for dim_name, docs in retrieved.items():
