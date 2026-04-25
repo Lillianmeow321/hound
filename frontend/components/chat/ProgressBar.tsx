@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import BorderCollie from '@/components/animations/BorderCollie'
 import type { AnimationState } from '@/lib/types'
+import { useLanguage } from '@/lib/i18n'
 
 export interface DimensionItem {
   name: string
@@ -17,6 +18,7 @@ interface Props {
 }
 
 const STATUS_PROGRESS: Record<string, number> = {
+  // zh
   '正在规划研究维度...': 10,
   '正在并行检索': 30,      // prefix match via fallback
   '正在生成报告...': 65,
@@ -25,18 +27,31 @@ const STATUS_PROGRESS: Record<string, number> = {
   '收集信息中（第1轮）...': 30,
   '收集信息中（第2轮）...': 40,
   '正在检索类似案例...': 50,
+  '正在联网搜索行业数据...': 60,
   '正在生成测算报告...': 68,
+  // en
+  'Planning research dimensions...': 10,
+  'Retrieving': 30,          // prefix match via fallback
+  'Generating report...': 65,
+  'Reviewing report quality...': 85,
+  'Analyzing information sufficiency...': 20,
+  'Collecting info (round 1)...': 30,
+  'Collecting info (round 2)...': 40,
+  'Retrieving similar cases...': 50,
+  'Searching web for industry data...': 60,
+  'Generating sizing report...': 68,
 }
 
 function getProgress(status: string): number {
   if (STATUS_PROGRESS[status] !== undefined) return STATUS_PROGRESS[status]
-  // prefix fallback for dynamic labels like "正在并行检索 5 个维度..."
+  // prefix fallback for dynamic labels like "正在并行检索 5 个维度..." / "Retrieving 5 dimensions..."
   const match = Object.keys(STATUS_PROGRESS).find(k => status.startsWith(k))
   return match ? STATUS_PROGRESS[match] : 50
 }
 
 export default function ProgressBar({ status, animationState, dimensions }: Props) {
   const [progress, setProgress] = useState(0)
+  const { t } = useLanguage()
 
   // When dimensions are present, let done-count drive the progress in the 30-60% range
   const dimProgress = dimensions && dimensions.length > 0
@@ -65,9 +80,9 @@ export default function ProgressBar({ status, animationState, dimensions }: Prop
             <span className="w-1 h-1 rounded-full bg-ink-green animate-dots-3" />
           </span>
         </div>
-        {status === '正在生成报告...' && (
+        {status === t.progressGenerating && (
           <p className="text-xs font-inter text-ink-green/70">
-            多agent并行，第一次小边牧跑会有点慢，后面就好了！汪 🐕
+            {t.progressGenHint}
           </p>
         )}
       </div>
@@ -101,7 +116,7 @@ export default function ProgressBar({ status, animationState, dimensions }: Prop
 
           {/* Completed count */}
           <p className="text-[11px] font-inter text-mid-gray">
-            已完成 {dimensions.filter(d => d.status === 'done').length}/{dimensions.length} 个维度
+            {t.progressDimCount(dimensions.filter(d => d.status === 'done').length, dimensions.length)}
           </p>
 
           {/* Snippet feed — appears as dims complete */}

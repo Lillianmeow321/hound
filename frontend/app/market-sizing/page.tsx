@@ -12,6 +12,7 @@ import { generateMarketSizingReport } from '@/lib/api'
 import type {
   Report, Conversation, AnimationState, ProgressStep, FollowUpQuestion,
 } from '@/lib/types'
+import { useLanguage } from '@/lib/i18n'
 
 type Phase = 'idle' | 'collecting' | 'loading' | 'done'
 
@@ -39,6 +40,7 @@ const CHITCHAT_PATTERNS = [
   /^[赞棒好][！!]*$/,
   /^厉害[了！!]?$/,
   /^不错[！!]?$/,
+  /^(hi|hello|hey|thanks|thank you)[!.?]?$/i,
 ]
 
 function isChitchat(text: string): boolean {
@@ -46,23 +48,12 @@ function isChitchat(text: string): boolean {
   if (!t) return true
   if (t.length >= 10) return false
   if (RESEARCH_KEYWORDS.some(kw => t.toLowerCase().includes(kw.toLowerCase()))) return false
-  if (/[a-zA-Z]{3,}/.test(t)) return false
+  if (/[a-zA-Z]{3,}/.test(t) && !CHITCHAT_PATTERNS.some(p => p.test(t))) return false
   return CHITCHAT_PATTERNS.some(p => p.test(t))
 }
 
-const CHITCHAT_REPLIES = [
-  '你好你好！汪！🐾',
-  '谢谢你，你真好！尾巴摇摆中...🐕',
-  '你也好！你也好！汪汪！',
-  '好开心见到你！我们开始研究吧？🐾',
-  '汪！收到！有什么研究方向可以告诉我～',
-]
-
-function randomChitchatReply(): string {
-  return CHITCHAT_REPLIES[Math.floor(Math.random() * CHITCHAT_REPLIES.length)]
-}
-
 export default function MarketSizingPage() {
+  const { t, lang } = useLanguage()
   const [mobileSidebar, setMobileSidebar] = useState(false)
   const [input, setInput] = useState('')
   const [phase, setPhase] = useState<Phase>('idle')
@@ -97,6 +88,10 @@ export default function MarketSizingPage() {
       try { localStorage.setItem(STORAGE_KEY, JSON.stringify(next)) } catch {}
       return next
     })
+  }
+
+  function randomChitchatReply(): string {
+    return (t.chitchat as readonly string[])[Math.floor(Math.random() * t.chitchat.length)]
   }
 
   async function handleSubmit() {
@@ -134,6 +129,7 @@ export default function MarketSizingPage() {
     setAnimState('thinking')
 
     await generateMarketSizingReport(value, {
+      lang,
       onFollowUp: (q: FollowUpQuestion) =>
         new Promise<string>(resolve => {
           console.log('[Hound] follow-up question:', q.question)
@@ -190,7 +186,7 @@ export default function MarketSizingPage() {
       setCurrentFollowUp(null)
       answerResolverRef.current = null
       if (!errorMsg) {
-        setErrorMsg(e?.message || '连接后端失败，请检查服务是否运行')
+        setErrorMsg(e?.message || (lang === 'en' ? 'Connection failed. Check if the server is running.' : '连接后端失败，请检查服务是否运行'))
       }
     })
   }
@@ -221,10 +217,10 @@ export default function MarketSizingPage() {
   // Input is enabled when: idle, done, or waiting for follow-up answer
   const inputDisabled = (phase === 'loading') || (phase === 'collecting' && !answerResolverRef.current)
   const inputPlaceholder = currentFollowUp
-    ? '在这里回答上面的问题...'
+    ? t.sizingInputAnswer
     : phase === 'idle' || phase === 'done'
-    ? '描述这家公司，几句话即可🐶'
-    : '等待处理中...'
+    ? t.sizingInputNew
+    : t.sizingInputWaiting
 
   return (
     <div className="flex flex-col h-screen overflow-hidden">
@@ -247,7 +243,7 @@ export default function MarketSizingPage() {
               {/* Error banner */}
               {errorMsg && (
                 <div className="animate-fade-in rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 font-inter leading-relaxed">
-                  <span className="font-medium">连接出错：</span>{errorMsg}
+                  <span className="font-medium">{t.errorPrefix}</span>{errorMsg}
                 </div>
               )}
 
@@ -324,13 +320,14 @@ export default function MarketSizingPage() {
 }
 
 function EmptyState() {
+  const { t } = useLanguage()
   return (
     <div className="flex flex-col items-center justify-center min-h-[58vh] gap-8 select-none">
       <BorderCollie state="idle" size={130} variant="market" />
       <div className="text-center space-y-2.5">
-        <h2 className="font-playfair text-2xl font-medium text-ink-black">市场规模测算</h2>
-        <p className="text-sm text-mid-gray font-inter max-w-sm leading-relaxed">
-          不知道怎么拍市场规模？边牧分析师来帮你。请描述公司/行业，小边牧将追问 2–3 个关键问题，然后输出市场测算。适配 VCer、consultant 和互联网从业者的颗粒度需求。
+        <h2 className="font-playfair text-2xl font-medium text-ink-black">{t.sizingTitle}</h2>
+        <p className="text-sm text-mid-gray font-inter max-w-sm leading-relaxed whitespace-pre-line">
+          {t.sizingDesc}
         </p>
       </div>
     </div>

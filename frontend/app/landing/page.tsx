@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import BorderCollie from '@/components/animations/BorderCollie'
+import { useLanguage } from '@/lib/i18n'
 
 function useCollieSize() {
   const [size, setSize] = useState(80)
@@ -62,6 +63,7 @@ export default function LandingPage() {
   const section2 = useInView(0.08)
   const leftCard = useInView(0.1)
   const rightCard = useInView(0.1)
+  const { t } = useLanguage()
 
   function handleStart() {
     try { localStorage.setItem('hound-seen-landing', '1') } catch {}
@@ -85,15 +87,15 @@ export default function LandingPage() {
 
           <div className="space-y-3">
             <h1 className="font-playfair text-[1.7rem] md:text-[2.25rem] font-medium text-ink-black leading-tight tracking-tight">
-              Hound——边牧分析师
+              {t.landingHero}
             </h1>
             <p className="text-sm md:text-base text-ink-green font-inter font-light tracking-wide">
-              聪明小狗帮你快快写投资memo！汪
+              {t.landingSubtitle}
             </p>
           </div>
 
           <p className="text-sm text-mid-gray font-inter leading-relaxed max-w-xs">
-            知识库来自一线沉淀数据，结合联网搜索，自动生成投研报告与市场测算
+            {t.landingDesc}
           </p>
 
           <button
@@ -102,7 +104,7 @@ export default function LandingPage() {
               tracking-widest rounded-sm transition-all duration-200
               hover:bg-ink-green hover:text-cream active:scale-95"
           >
-            开始使用 →
+            {t.landingCta}
           </button>
         </div>
 
@@ -111,7 +113,7 @@ export default function LandingPage() {
           className={`absolute bottom-10 flex flex-col items-center gap-1.5 transition-all duration-700 delay-500
             ${hero.inView ? 'opacity-40' : 'opacity-0'}`}
         >
-          <span className="text-[10px] font-inter text-mid-gray tracking-widest uppercase">向下滚动</span>
+          <span className="text-[10px] font-inter text-mid-gray tracking-widest uppercase">{t.landingScrollHint}</span>
           <div className="w-px h-6 bg-mid-gray/40 animate-pulse" />
         </div>
       </section>
@@ -124,12 +126,12 @@ export default function LandingPage() {
       >
         <div className="max-w-5xl mx-auto">
           <h2 className="font-playfair text-[1.5rem] md:text-[1.9rem] font-medium text-ink-black text-center mb-10 md:mb-14 tracking-tight">
-            看看边牧能做什么
+            {t.landingSection2Title}
           </h2>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
 
-            {/* Left card: 投研分析 */}
+            {/* Left card: Research analysis */}
             <div
               ref={leftCard.ref}
               className="relative bg-cream border border-ink-green/25 rounded-xl p-7 pt-9 shadow-[0_1px_12px_rgba(45,74,62,0.06)]"
@@ -137,7 +139,7 @@ export default function LandingPage() {
               <span className="absolute -top-3 left-6 bg-cream px-3 py-0.5
                 text-[10px] font-inter font-semibold text-ink-green tracking-[0.12em] uppercase
                 border border-ink-green/25 rounded-full">
-                投研分析
+                {t.landingCardResearch}
               </span>
 
               <div className="space-y-4">
@@ -155,7 +157,7 @@ export default function LandingPage() {
               </div>
             </div>
 
-            {/* Right card: 市场规模测算 */}
+            {/* Right card: Market sizing */}
             <div
               ref={rightCard.ref}
               className="relative bg-cream border border-ink-green/25 rounded-xl p-7 pt-9 shadow-[0_1px_12px_rgba(45,74,62,0.06)]"
@@ -163,14 +165,14 @@ export default function LandingPage() {
               <span className="absolute -top-3 left-6 bg-cream px-3 py-0.5
                 text-[10px] font-inter font-semibold text-ink-green tracking-[0.12em] uppercase
                 border border-ink-green/25 rounded-full">
-                市场规模测算
+                {t.landingCardSizing}
               </span>
 
               <div className="overflow-x-auto">
                 <table className="w-full font-inter text-[12.5px]" style={{ borderCollapse: 'collapse' }}>
                   <thead>
                     <tr>
-                      {['情景', '假设条件', '市场规模（SOM，未来3年）'].map((h) => (
+                      {t.landingTableHeaders.map((h) => (
                         <th
                           key={h}
                           className="text-left text-[10px] font-semibold text-ink-green uppercase

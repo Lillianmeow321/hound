@@ -143,7 +143,7 @@ def _retrieve_one_dimension(dim: dict) -> tuple:
     return name, docs, snippet
 
 
-def _build_competitive_prompt(topic: str, dimensions: list, context: str, feedback: list = []) -> str:
+def _build_competitive_prompt(topic: str, dimensions: list, context: str, feedback: list = [], lang: str = "zh") -> str:
     dim_names = [d["name"] for d in dimensions]
     prompt = f"""你是一个资深AI行业研究员，正在为投资机构撰写一份行业分析研报。
 
@@ -191,11 +191,13 @@ def _build_competitive_prompt(topic: str, dimensions: list, context: str, feedba
 
     if feedback:
         prompt += "\n\n上一版报告的问题，请重点改进：\n" + "\n".join(f"- {i}" for i in feedback)
+    if lang == "en":
+        prompt += "\n\nIMPORTANT: Write the entire research report in English."
     return prompt
 
 
-def _build_sizing_prompt(company_info: str, ref_text: str, web_text: str) -> str:
-    return f"""你是一个资深投资研究员，擅长市场规模测算。
+def _build_sizing_prompt(company_info: str, ref_text: str, web_text: str, lang: str = "zh") -> str:
+    result = f"""你是一个资深投资研究员，擅长市场规模测算。
 
 用户提供的公司信息：
 {company_info}
@@ -247,6 +249,9 @@ def _build_sizing_prompt(company_info: str, ref_text: str, web_text: str) -> str
 - 口吻审慎，保留余地，用"估计""约""参考"等措辞
 - 每个数字都要有来源或推导逻辑，不要凭空捏造
 - 参考知识库案例的测算思路，但数据要用联网搜索的最新数据"""
+    if lang == "en":
+        result += "\n\nIMPORTANT: Write the entire market sizing report in English."
+    return result
 
 
 # ─── Health ──────────────────────────────────────────────────────────────────
@@ -257,11 +262,22 @@ def health():
 
 # ─── Competitive analysis SSE ─────────────────────────────────────────────────
 @app.get("/api/competitive/stream")
-async def competitive_stream(query: str):
+async def competitive_stream(query: str, lang: str = "zh"):
+    if lang == "en":
+        _step_planning = "Planning research dimensions..."
+        _step_retrieving = lambda n: f"Retrieving {n} dimensions in parallel (knowledge base + web)..."
+        _step_generating = "Generating report..."
+        _step_reviewing = "Reviewing report quality..."
+    else:
+        _step_planning = "正在规划研究维度..."
+        _step_retrieving = lambda n: f"正在并行检索 {n} 个维度（知识库 + 联网）..."
+        _step_generating = "正在生成报告..."
+        _step_reviewing = "正在审核报告质量..."
+
     async def gen():
         try:
             # ── 1. Plan ───────────────────────────────────────────────────────
-            yield sse({"type": "step", "label": "正在规划研究维度..."})
+            yield sse({"type": "step", "label": _step_planning})
             yield sse({"type": "anim", "state": "thinking"})
 
             plan_task = asyncio.create_task(asyncio.to_thread(plan_research, query))
@@ -275,7 +291,7 @@ async def competitive_stream(query: str):
             n = len(plan["dimensions"])
             dim_names = [d["name"] for d in plan["dimensions"]]
             yield sse({"type": "dimensions", "names": dim_names})
-            yield sse({"type": "step", "label": f"正在并行检索 {n} 个维度（知识库 + 联网）..."})
+            yield sse({"type": "step", "label": _step_retrieving(n)})
             yield sse({"type": "anim", "state": "running"})
 
             # ── 2. Parallel retrieval with per-dim SSE updates ────────────────
@@ -309,10 +325,10 @@ async def competitive_stream(query: str):
                     context += f"[{doc.get('type','私有知识库')}] 来源：{doc['source']}\n{doc['content']}\n\n"
 
             # ── 3. Stream report tokens ───────────────────────────────────────
-            yield sse({"type": "step", "label": "正在生成报告..."})
+            yield sse({"type": "step", "label": _step_generating})
             yield sse({"type": "anim", "state": "thinking"})
 
-            prompt = _build_competitive_prompt(plan["topic"], plan["dimensions"], context)
+            prompt = _build_competitive_prompt(plan["topic"], plan["dimensions"], context, lang=lang)
             token_queue: asyncio.Queue = asyncio.Queue()
             event_loop = asyncio.get_running_loop()
 
@@ -359,7 +375,7 @@ async def competitive_stream(query: str):
                     raise Exception(payload)
 
             # ── 4. Review (no retry — saves ~20s) ────────────────────────────
-            yield sse({"type": "step", "label": "正在审核报告质量..."})
+            yield sse({"type": "step", "label": _step_reviewing})
             review = await asyncio.to_thread(review_report, report_text, plan["dimensions"])
 
             citations = extract_citations(report_text)
@@ -394,6 +410,7 @@ async def competitive_stream(query: str):
 class CollectRequest(BaseModel):
     input: str
     history: list  # [{question: str, answer: str}]
+    lang: str = "zh"
 
 
 @app.post("/api/market-sizing/collect")
@@ -402,7 +419,27 @@ async def market_sizing_collect(req: CollectRequest):
     for qa in req.history:
         collected += f"\n{qa['question']} {qa['answer']}"
 
-    check_prompt = f"""用户想做一家公司的市场规模测算。
+    if req.lang == "en":
+        check_prompt = f"""The user wants to size the market for a company.
+
+Collected information so far:
+{collected}
+
+For market sizing, we need:
+1. Business description (what the company does)
+2. Target customer segment
+3. Geographic target market
+4. Business model / monetization
+5. Expansion plans (optional)
+
+Is the information sufficient to begin sizing?
+
+If sufficient, output: {{"ready": true, "summary": "organized company info summary in English"}}
+If not, output: {{"ready": false, "question": "the most important follow-up question (brief, one sentence, in English)"}}
+
+Output JSON only, no other text."""
+    else:
+        check_prompt = f"""用户想做一家公司的市场规模测算。
 
 目前收集到的信息：
 {collected}
@@ -427,10 +464,21 @@ async def market_sizing_collect(req: CollectRequest):
 
 # ─── Market sizing: generate report SSE ──────────────────────────────────────
 @app.get("/api/market-sizing/stream")
-async def market_sizing_stream(company_info: str):
+async def market_sizing_stream(company_info: str, lang: str = "zh"):
+    if lang == "en":
+        _step_cases = "Retrieving similar cases..."
+        _step_web = "Searching web for industry data..."
+        _step_report = "Generating sizing report..."
+        _web_query = f"{company_info[:100]} market size industry data"
+    else:
+        _step_cases = "正在检索类似案例..."
+        _step_web = "正在联网搜索行业数据..."
+        _step_report = "正在生成测算报告..."
+        _web_query = f"{company_info[:100]} 市场规模 行业数据"
+
     async def gen():
         try:
-            yield sse({"type": "step", "label": "正在检索类似案例..."})
+            yield sse({"type": "step", "label": _step_cases})
             yield sse({"type": "anim", "state": "running"})
 
             def _retrieve_sizing():
@@ -439,17 +487,15 @@ async def market_sizing_stream(company_info: str):
 
             ref_text = await asyncio.to_thread(_retrieve_sizing)
 
-            yield sse({"type": "step", "label": "正在联网搜索行业数据..."})
-            web_results = await asyncio.to_thread(
-                search_web, f"{company_info[:100]} 市场规模 行业数据", 3
-            )
+            yield sse({"type": "step", "label": _step_web})
+            web_results = await asyncio.to_thread(search_web, _web_query, 3)
             web_text = "\n\n".join(
                 f"[{r['title']}]({r['source']})\n{r['content']}" for r in web_results
             )
 
-            yield sse({"type": "step", "label": "正在生成测算报告..."})
+            yield sse({"type": "step", "label": _step_report})
             yield sse({"type": "anim", "state": "thinking"})
-            prompt = _build_sizing_prompt(company_info, ref_text, web_text)
+            prompt = _build_sizing_prompt(company_info, ref_text, web_text, lang=lang)
             report_text = await asyncio.to_thread(_call, prompt, 0.3)
             citations = extract_citations(report_text)
 
@@ -477,11 +523,21 @@ async def market_sizing_stream(company_info: str):
 class FollowUpRequest(BaseModel):
     query: str
     report: str
+    lang: str = "zh"
 
 
 @app.post("/api/followup")
 async def followup_chat(req: FollowUpRequest):
-    prompt = f"""以下是当前研究报告：
+    if req.lang == "en":
+        prompt = f"""Here is the current research report:
+
+{req.report}
+
+User follow-up question: {req.query}
+
+Please answer based on the report content. If the report doesn't contain relevant information, note that additional research is needed. Keep the answer concise and professional, within 200 words. Write in English."""
+    else:
+        prompt = f"""以下是当前研究报告：
 
 {req.report}
 

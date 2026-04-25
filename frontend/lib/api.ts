@@ -112,6 +112,7 @@ function listenSse(url: string, handlers: SseHandlers): Promise<void> {
 
 // ─── Competitive analysis ────────────────────────────────────────────────────
 export interface StreamOptions {
+  lang?: string
   onStep: (step: ProgressStep) => void
   onAnimationState: (state: AnimationState) => void
   onReport: (report: Report) => void
@@ -125,12 +126,13 @@ export async function generateCompetitiveReport(
   query: string,
   opts: StreamOptions,
 ): Promise<void> {
-  const url = `${API_BASE}/api/competitive/stream?query=${encodeURIComponent(query)}`
+  const url = `${API_BASE}/api/competitive/stream?query=${encodeURIComponent(query)}&lang=${opts.lang ?? 'zh'}`
   return listenSse(url, opts)
 }
 
 // ─── Market sizing ────────────────────────────────────────────────────────────
 export interface MarketSizingOptions {
+  lang?: string
   onFollowUp: (q: FollowUpQuestion) => Promise<string>
   onStep: (step: ProgressStep) => void
   onAnimationState: (state: AnimationState) => void
@@ -159,7 +161,7 @@ export async function generateMarketSizingReport(
       const response = await fetch(collectUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ input: initialInput, history }),
+        body: JSON.stringify({ input: initialInput, history, lang: opts.lang ?? 'zh' }),
         signal: controller.signal,
       })
       clearTimeout(timeoutId)
@@ -202,17 +204,17 @@ export async function generateMarketSizingReport(
   }
 
   // Stream the report
-  const url = `${API_BASE}/api/market-sizing/stream?company_info=${encodeURIComponent(companyInfo)}`
+  const url = `${API_BASE}/api/market-sizing/stream?company_info=${encodeURIComponent(companyInfo)}&lang=${opts.lang ?? 'zh'}`
   return listenSse(url, opts)
 }
 
 // ─── Follow-up chat ───────────────────────────────────────────────────────────
-export async function followUpChat(query: string, report: string): Promise<string> {
+export async function followUpChat(query: string, report: string, lang = 'zh'): Promise<string> {
   console.log('[Hound] followUpChat:', query.slice(0, 30))
   const res = await fetch(`${API_BASE}/api/followup`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query, report }),
+    body: JSON.stringify({ query, report, lang }),
   })
   if (!res.ok) throw new Error(`followup HTTP ${res.status}`)
   const data = await res.json()

@@ -12,6 +12,7 @@ import ReportView from '@/components/report/ReportView'
 import BorderCollie from '@/components/animations/BorderCollie'
 import { generateCompetitiveReport, followUpChat } from '@/lib/api'
 import type { Report, Conversation, AnimationState, ProgressStep } from '@/lib/types'
+import { useLanguage } from '@/lib/i18n'
 
 type Phase = 'idle' | 'loading' | 'done'
 const STORAGE_KEY = 'hound-conv-competitive'
@@ -36,6 +37,7 @@ const CHITCHAT_PATTERNS = [
   /^[赞棒好][！!]*$/,
   /^厉害[了！!]?$/,
   /^不错[！!]?$/,
+  /^(hi|hello|hey|thanks|thank you)[!.?]?$/i,
 ]
 
 function isChitchat(text: string): boolean {
@@ -43,26 +45,15 @@ function isChitchat(text: string): boolean {
   if (!t) return true
   if (t.length >= 10) return false
   if (RESEARCH_KEYWORDS.some(kw => t.toLowerCase().includes(kw.toLowerCase()))) return false
-  if (/[a-zA-Z]{3,}/.test(t)) return false
+  if (/[a-zA-Z]{3,}/.test(t) && !CHITCHAT_PATTERNS.some(p => p.test(t))) return false
   // Only positive-match known chitchat patterns; don't block by length alone
   return CHITCHAT_PATTERNS.some(p => p.test(t))
-}
-
-const CHITCHAT_REPLIES = [
-  '你好你好！汪！🐾',
-  '谢谢你，你真好！尾巴摇摆中...🐕',
-  '你也好！你也好！汪汪！',
-  '好开心见到你！我们开始研究吧？🐾',
-  '汪！收到！有什么研究方向可以告诉我～',
-]
-
-function randomChitchatReply(): string {
-  return CHITCHAT_REPLIES[Math.floor(Math.random() * CHITCHAT_REPLIES.length)]
 }
 
 export default function CompetitivePage() {
   const router = useRouter()
   const [ready, setReady] = useState(false)
+  const { t, lang } = useLanguage()
 
   useEffect(() => {
     if (!localStorage.getItem('hound-seen-landing')) {
@@ -104,6 +95,10 @@ export default function CompetitivePage() {
     })
   }
 
+  function randomChitchatReply(): string {
+    return (t.chitchat as readonly string[])[Math.floor(Math.random() * t.chitchat.length)]
+  }
+
   async function handleSubmit() {
     if (!input.trim() || phase === 'loading') return
     const query = input.trim()
@@ -115,14 +110,14 @@ export default function CompetitivePage() {
     if (report) {
       console.log('[Hound] mode: followup')
       setPhase('loading')
-      setProgressStep({ label: '正在检索知识库...', status: 'active' })
+      setProgressStep({ label: lang === 'en' ? 'Searching knowledge base...' : '正在检索知识库...', status: 'active' })
       setAnimState('running')
       try {
-        const answer = await followUpChat(query, report.content)
+        const answer = await followUpChat(query, report.content, lang)
         setChatHistory(h => [...h, { role: 'user', content: query }, { role: 'assistant', content: answer }])
       } catch (e) {
         console.error('[Hound] followup error:', e)
-        setErrorMsg(`追问失败：${e instanceof Error ? e.message : '未知错误'}`)
+        setErrorMsg(`${lang === 'en' ? 'Follow-up failed: ' : '追问失败：'}${e instanceof Error ? e.message : (lang === 'en' ? 'Unknown error' : '未知错误')}`)
       }
       setPhase('done')
       setAnimState('idle')
@@ -147,11 +142,12 @@ export default function CompetitivePage() {
     setAnimState('idle')
 
     await generateCompetitiveReport(query, {
+      lang,
       onStep: step => {
         console.log('[Hound] step:', step.label)
         setProgressStep(step)
         // Clear dimension chips once we move past retrieval
-        if (!step.label.includes('检索')) setDimensions([])
+        if (!step.label.includes('检索') && !step.label.toLowerCase().includes('retriev')) setDimensions([])
       },
       onAnimationState: s => setAnimState(s),
       onDimensions: names => {
@@ -191,7 +187,7 @@ export default function CompetitivePage() {
       setPhase('idle')
       setAnimState('idle')
       if (!errorMsg) {
-        setErrorMsg(e?.message || '连接后端失败，请检查服务是否运行')
+        setErrorMsg(e?.message || (lang === 'en' ? 'Connection failed. Check if the server is running.' : '连接后端失败，请检查服务是否运行'))
       }
     })
   }
@@ -253,7 +249,7 @@ export default function CompetitivePage() {
               {/* Error banner */}
               {errorMsg && (
                 <div className="animate-fade-in mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 font-inter leading-relaxed">
-                  <span className="font-medium">连接出错：</span>{errorMsg}
+                  <span className="font-medium">{t.errorPrefix}</span>{errorMsg}
                 </div>
               )}
 
@@ -304,7 +300,7 @@ export default function CompetitivePage() {
                 <div className="mt-8 space-y-4 border-t border-border-gray pt-6">
                   {report && (
                     <p className="text-[11px] text-mid-gray uppercase tracking-widest font-inter">
-                      追问记录
+                      {t.followupLabel}
                     </p>
                   )}
                   {chatHistory.map((m, i) => (
@@ -332,11 +328,7 @@ export default function CompetitivePage() {
                 onChange={setInput}
                 onSubmit={handleSubmit}
                 disabled={phase === 'loading'}
-                placeholder={
-                  report
-                    ? '追问报告内容，或输入新赛道开始全新分析...'
-                    : '输入研究方向，比如 AI情感陪伴 汪！'
-                }
+                placeholder={report ? t.inputPlaceholderFollowup : t.inputPlaceholderNew}
                 autoFocus
               />
             </div>
@@ -348,14 +340,14 @@ export default function CompetitivePage() {
 }
 
 function EmptyState() {
+  const { t } = useLanguage()
   return (
     <div className="flex flex-col items-center justify-center min-h-[58vh] gap-8 select-none">
       <BorderCollie state="idle" size={130} variant="competitive" />
       <div className="text-center space-y-2.5">
-        <h2 className="font-playfair text-2xl font-medium text-ink-black">投研分析</h2>
-        <p className="text-sm text-mid-gray font-inter max-w-sm leading-relaxed">
-          知识库来自一线沉淀数据，懂分析师的需求与痛点。<br />
-          输入研究方向后，将结合知识库智慧与联网搜索，自动生成研究报告。
+        <h2 className="font-playfair text-2xl font-medium text-ink-black">{t.researchTitle}</h2>
+        <p className="text-sm text-mid-gray font-inter max-w-sm leading-relaxed whitespace-pre-line">
+          {t.researchDesc}
         </p>
       </div>
     </div>
