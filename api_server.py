@@ -4,6 +4,7 @@ Run: python api_server.py  (or: uvicorn api_server:app --reload)
 """
 import os, sys, json, re
 import asyncio
+import requests
 
 # Run from project root so ./qdrant_db paths resolve
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -18,21 +19,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from openai import OpenAI
-from fastembed import TextEmbedding
 from qdrant_client import QdrantClient
 from web_search import search_web
 from planner_agent import plan_research
 from reviewer_agent import review_report
 
-# ─── Shared model init (runs once at startup) ─────────────────────────────────
-print("加载FastEmbed BGE模型...")
+# ─── Shared clients (no local model download) ────────────────────────────────
+print("初始化客户端...")
 _qdrant = QdrantClient(
     url=os.getenv("QDRANT_URL"),
     api_key=os.getenv("QDRANT_API_KEY")
 )
-_embed_model = TextEmbedding(model_name="jinaai/jina-embeddings-v2-base-zh")
 _deepseek = OpenAI(api_key=os.getenv("DEEPSEEK_API_KEY"), base_url="https://api.deepseek.com")
-print("✓ 模型加载完成，服务启动中...")
+print("✓ 客户端初始化完成，服务启动中...")
 
 # ─── App ─────────────────────────────────────────────────────────────────────
 app = FastAPI(title="Hound API")
@@ -51,7 +50,14 @@ def sse(data: dict) -> str:
 
 
 def _embed(text: str) -> list:
-    return list(_embed_model.embed([text]))[0].tolist()
+    resp = requests.post(
+        "https://api.jina.ai/v1/embeddings",
+        headers={"Authorization": f"Bearer {os.getenv('JINA_API_KEY')}"},
+        json={"model": "jina-embeddings-v2-base-zh", "input": [text]},
+        timeout=30,
+    )
+    resp.raise_for_status()
+    return resp.json()["data"][0]["embedding"]
 
 
 def _qdrant_search(collection: str, text: str, k: int) -> list:
