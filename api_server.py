@@ -53,7 +53,7 @@ def _embed(text: str) -> list:
     resp = requests.post(
         "https://api.jina.ai/v1/embeddings",
         headers={"Authorization": f"Bearer {os.getenv('JINA_API_KEY')}"},
-        json={"model": "jina-embeddings-v2-base-zh", "input": [text]},
+        json={"model": "jina-embeddings-v3", "task": "retrieval.query", "dimensions": 1024, "input": [text]},
         timeout=30,
     )
     resp.raise_for_status()
