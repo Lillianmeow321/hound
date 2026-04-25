@@ -344,8 +344,11 @@ function EmptyState() {
   return (
     <div className="flex flex-col items-center justify-center min-h-[58vh] gap-8 select-none">
       <BorderCollie state="idle" size={130} variant="competitive" />
-      <div className="text-center space-y-2.5">
+      <div className="text-center space-y-3">
         <h2 className="font-playfair text-2xl font-medium text-ink-black">{t.researchTitle}</h2>
+        <p className="text-base font-semibold text-ink-green font-inter">
+          {t.researchSlogan}
+        </p>
         <p className="text-sm text-mid-gray font-inter max-w-sm leading-relaxed whitespace-pre-line">
           {t.researchDesc}
         </p>

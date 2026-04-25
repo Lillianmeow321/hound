@@ -28,6 +28,7 @@ export const translations = {
 
     // Research page
     researchTitle: '投研分析',
+    researchSlogan: '最懂投资人与consultant语言风格的小边牧。',
     researchDesc: '知识库来自一线沉淀数据，懂分析师的需求与痛点。\n输入研究方向后，将结合知识库智慧与联网搜索，自动生成研究报告。',
     inputPlaceholderNew: '输入研究方向，比如 AI情感陪伴 汪！',
     inputPlaceholderFollowup: '追问报告内容，或输入新赛道开始全新分析...',
@@ -102,6 +103,7 @@ export const translations = {
 
     // Research page
     researchTitle: 'Research Analysis',
+    researchSlogan: 'The AI analyst that speaks fluent VC and consultant.',
     researchDesc: 'Built on frontline analyst data with web search integration.\nEnter a research topic and Hound will generate a full investment research report.',
     inputPlaceholderNew: 'Enter a topic, e.g. AI Companions 🐾',
     inputPlaceholderFollowup: 'Ask a follow-up, or enter a new topic to start fresh...',
