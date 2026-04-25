@@ -4,26 +4,45 @@ import { useEffect, useState } from 'react'
 import BorderCollie from '@/components/animations/BorderCollie'
 import type { AnimationState } from '@/lib/types'
 
+export interface DimensionItem {
+  name: string
+  status: 'active' | 'done'
+}
+
 interface Props {
   status: string
   animationState: AnimationState
+  dimensions?: DimensionItem[]
 }
 
 const STATUS_PROGRESS: Record<string, number> = {
-  '正在规划研究维度...': 15,
-  '正在检索知识库...': 38,
+  '正在规划研究维度...': 10,
+  '正在并行检索': 30,      // prefix match via fallback
+  '正在生成报告...': 65,
+  '正在审核报告质量...': 85,
   '正在分析信息充分度...': 20,
   '收集信息中（第1轮）...': 30,
   '收集信息中（第2轮）...': 40,
   '正在检索类似案例...': 50,
-  '正在生成报告...': 68,
   '正在生成测算报告...': 68,
-  '正在审核报告质量...': 88,
 }
 
-export default function ProgressBar({ status, animationState }: Props) {
+function getProgress(status: string): number {
+  if (STATUS_PROGRESS[status] !== undefined) return STATUS_PROGRESS[status]
+  // prefix fallback for dynamic labels like "正在并行检索 5 个维度..."
+  const match = Object.keys(STATUS_PROGRESS).find(k => status.startsWith(k))
+  return match ? STATUS_PROGRESS[match] : 50
+}
+
+export default function ProgressBar({ status, animationState, dimensions }: Props) {
   const [progress, setProgress] = useState(0)
-  const target = STATUS_PROGRESS[status] ?? 50
+
+  // When dimensions are present, let done-count drive the progress in the 30-60% range
+  const dimProgress = dimensions && dimensions.length > 0
+    ? 30 + Math.round((dimensions.filter(d => d.status === 'done').length / dimensions.length) * 25)
+    : null
+
+  const target = dimProgress ?? getProgress(status)
 
   useEffect(() => {
     const timer = setTimeout(() => setProgress(target), 60)
@@ -31,7 +50,7 @@ export default function ProgressBar({ status, animationState }: Props) {
   }, [target])
 
   return (
-    <div className="flex flex-col items-center gap-6 py-10 animate-fade-in">
+    <div className="flex flex-col items-center gap-5 py-10 animate-fade-in">
       {/* Dog animation */}
       <BorderCollie state={animationState} size={150} />
 
@@ -44,6 +63,32 @@ export default function ProgressBar({ status, animationState }: Props) {
           <span className="w-1 h-1 rounded-full bg-ink-green animate-dots-3" />
         </span>
       </div>
+
+      {/* Dimension chips — only shown during retrieval */}
+      {dimensions && dimensions.length > 0 && (
+        <div className="flex flex-wrap justify-center gap-2 max-w-sm">
+          {dimensions.map(d => (
+            <span
+              key={d.name}
+              className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full font-inter border transition-all duration-500 ${
+                d.status === 'done'
+                  ? 'bg-ink-green/10 text-ink-green border-ink-green/25'
+                  : 'bg-amber-50 text-amber-700 border-amber-200'
+              }`}
+            >
+              {d.status === 'done' ? (
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                  <path d="M1.5 5l2.5 2.5 4.5-4.5" stroke="currentColor" strokeWidth="1.5"
+                    strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              ) : (
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse inline-block" />
+              )}
+              {d.name}
+            </span>
+          ))}
+        </div>
+      )}
 
       {/* Progress track */}
       <div className="w-56 h-0.5 bg-border-gray rounded-full overflow-hidden">

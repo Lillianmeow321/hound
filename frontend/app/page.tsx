@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import Navbar from '@/components/layout/Navbar'
 import Sidebar from '@/components/layout/Sidebar'
 import InputArea from '@/components/chat/InputArea'
-import ProgressBar from '@/components/chat/ProgressBar'
+import ProgressBar, { type DimensionItem } from '@/components/chat/ProgressBar'
 import ReportView from '@/components/report/ReportView'
 import BorderCollie from '@/components/animations/BorderCollie'
 import { generateCompetitiveReport, followUpChat } from '@/lib/api'
@@ -78,6 +78,7 @@ export default function CompetitivePage() {
   const [report, setReport] = useState<Report | null>(null)
   const [currentQuery, setCurrentQuery] = useState('')
   const [errorMsg, setErrorMsg] = useState('')
+  const [dimensions, setDimensions] = useState<DimensionItem[]>([])
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
   const [chatHistory, setChatHistory] = useState<Array<{ role: string; content: string }>>([])
@@ -138,14 +139,23 @@ export default function CompetitivePage() {
     setPhase('loading')
     setReport(null)
     setChatHistory([])
+    setDimensions([])
     setAnimState('idle')
 
     await generateCompetitiveReport(query, {
       onStep: step => {
         console.log('[Hound] step:', step.label)
         setProgressStep(step)
+        // Clear dimension chips once we move past retrieval
+        if (!step.label.includes('检索')) setDimensions([])
       },
       onAnimationState: s => setAnimState(s),
+      onDimensions: names => {
+        setDimensions(names.map(name => ({ name, status: 'active' })))
+      },
+      onDimDone: name => {
+        setDimensions(prev => prev.map(d => d.name === name ? { ...d, status: 'done' } : d))
+      },
       onReport: r => {
         console.log('[Hound] report received')
         setReport(r)
@@ -234,7 +244,7 @@ export default function CompetitivePage() {
                       </div>
                     </div>
                   )}
-                  <ProgressBar status={progressStep.label} animationState={animState} />
+                  <ProgressBar status={progressStep.label} animationState={animState} dimensions={dimensions.length > 0 ? dimensions : undefined} />
                 </>
               )}
               {phase === 'done' && report && (

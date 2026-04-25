@@ -10,6 +10,8 @@ interface SseHandlers {
   onAnimationState: (state: AnimationState) => void
   onReport: (report: Report) => void
   onError?: (msg: string) => void
+  onDimensions?: (names: string[]) => void
+  onDimDone?: (name: string) => void
 }
 
 function listenSse(url: string, handlers: SseHandlers): Promise<void> {
@@ -22,16 +24,16 @@ function listenSse(url: string, handlers: SseHandlers): Promise<void> {
     let reviewData = { score: 7, pass: true, suggestions: [] as string[], issues: [] as string[] }
     let citations: Report['citations'] = []
 
-    // 60-second hard timeout: prevents input from being stuck disabled forever
+    // 180-second hard timeout (report generation can take 1-2 min)
     const timeoutId = setTimeout(() => {
       if (settled) return
       settled = true
       es.close()
-      const msg = '后端响应超时（60s）。请确认 Railway 服务正常运行，或检查 Vercel 环境变量 NEXT_PUBLIC_API_URL 是否指向正确的后端地址。'
+      const msg = '后端响应超时（180s）。报告生成需要 1-2 分钟，请刷新重试。若持续超时，请确认 Railway 服务正常运行。'
       console.error('[Hound] SSE timeout:', url)
       handlers.onError?.(msg)
       reject(new Error(msg))
-    }, 60_000)
+    }, 180_000)
 
     es.onmessage = (e) => {
       let data: Record<string, unknown>
@@ -61,6 +63,12 @@ function listenSse(url: string, handlers: SseHandlers): Promise<void> {
           break
         case 'citations':
           citations = (data.items as Report['citations']) ?? []
+          break
+        case 'dimensions':
+          handlers.onDimensions?.(data.names as string[])
+          break
+        case 'dim_done':
+          handlers.onDimDone?.(data.name as string)
           break
         case 'done':
           clearTimeout(timeoutId)
@@ -103,6 +111,8 @@ export interface StreamOptions {
   onAnimationState: (state: AnimationState) => void
   onReport: (report: Report) => void
   onError?: (msg: string) => void
+  onDimensions?: (names: string[]) => void
+  onDimDone?: (name: string) => void
 }
 
 export async function generateCompetitiveReport(

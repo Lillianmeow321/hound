@@ -98,24 +98,22 @@ def extract_citations(report: str) -> list:
     return citations
 
 
-def _retrieve_dimensions(dimensions: list) -> dict:
-    results = {}
-    for dim in dimensions:
-        name, query = dim["name"], dim["query"]
-        hits = _qdrant_search("memos", query, k=2)
-        private = [
-            {
-                "source": hit.payload.get("metadata", {}).get("source", "").split("/")[-1],
-                "content": hit.payload.get("page_content", "")[:300],
-                "type": "私有知识库",
-            }
-            for hit in hits
-        ]
-        web = search_web(query, max_results=2)
-        for r in web:
-            r["type"] = "联网搜索"
-        results[name] = private + web
-    return results
+def _retrieve_one_dimension(dim: dict) -> tuple:
+    """Returns (dim_name, docs_list) — runs in a thread."""
+    name, query = dim["name"], dim["query"]
+    hits = _qdrant_search("memos", query, k=2)
+    private = [
+        {
+            "source": hit.payload.get("metadata", {}).get("source", "").split("/")[-1],
+            "content": hit.payload.get("page_content", "")[:300],
+            "type": "私有知识库",
+        }
+        for hit in hits
+    ]
+    web = search_web(query, max_results=2)
+    for r in web:
+        r["type"] = "联网搜索"
+    return name, private + web
 
 
 def _build_competitive_prompt(topic: str, dimensions: list, context: str, feedback: list = []) -> str:
@@ -235,14 +233,48 @@ def health():
 async def competitive_stream(query: str):
     async def gen():
         try:
+            # ── 1. Plan ───────────────────────────────────────────────────────
             yield sse({"type": "step", "label": "正在规划研究维度..."})
             yield sse({"type": "anim", "state": "thinking"})
-            plan = await asyncio.to_thread(plan_research, query)
+
+            plan_task = asyncio.create_task(asyncio.to_thread(plan_research, query))
+            while not plan_task.done():
+                try:
+                    await asyncio.wait_for(asyncio.shield(plan_task), timeout=10)
+                except asyncio.TimeoutError:
+                    yield ": ka\n\n"
+            plan = plan_task.result()
 
             n = len(plan["dimensions"])
-            yield sse({"type": "step", "label": f"正在检索 {n} 个维度（知识库 + 联网）..."})
+            dim_names = [d["name"] for d in plan["dimensions"]]
+            yield sse({"type": "dimensions", "names": dim_names})
+            yield sse({"type": "step", "label": f"正在并行检索 {n} 个维度（知识库 + 联网）..."})
             yield sse({"type": "anim", "state": "running"})
-            retrieved = await asyncio.to_thread(_retrieve_dimensions, plan["dimensions"])
+
+            # ── 2. Parallel retrieval with per-dim SSE updates ────────────────
+            queue: asyncio.Queue = asyncio.Queue()
+
+            async def retrieve_one(dim):
+                result = await asyncio.to_thread(_retrieve_one_dimension, dim)
+                await queue.put(result)
+
+            gather_task = asyncio.create_task(
+                asyncio.gather(*[retrieve_one(d) for d in plan["dimensions"]])
+            )
+
+            retrieved = {}
+            pending = n
+            while pending > 0:
+                try:
+                    dim_name, dim_docs = await asyncio.wait_for(queue.get(), timeout=10)
+                    retrieved[dim_name] = dim_docs
+                    yield sse({"type": "dim_done", "name": dim_name})
+                    pending -= 1
+                except asyncio.TimeoutError:
+                    if gather_task.done():
+                        break
+                    yield ": ka\n\n"
+            await gather_task
 
             context = ""
             for dim_name, docs in retrieved.items():
@@ -250,20 +282,22 @@ async def competitive_stream(query: str):
                 for doc in docs:
                     context += f"[{doc.get('type','私有知识库')}] 来源：{doc['source']}\n{doc['content']}\n\n"
 
+            # ── 3. Generate report ────────────────────────────────────────────
             yield sse({"type": "step", "label": "正在生成报告..."})
             yield sse({"type": "anim", "state": "thinking"})
-            prompt = _build_competitive_prompt(plan["topic"], plan["dimensions"], context)
-            report_text = await asyncio.to_thread(_call, prompt, 0.5)
 
+            prompt = _build_competitive_prompt(plan["topic"], plan["dimensions"], context)
+            report_task = asyncio.create_task(asyncio.to_thread(_call, prompt, 0.5))
+            while not report_task.done():
+                try:
+                    await asyncio.wait_for(asyncio.shield(report_task), timeout=10)
+                except asyncio.TimeoutError:
+                    yield ": ka\n\n"
+            report_text = report_task.result()
+
+            # ── 4. Review (no retry — saves ~20s) ────────────────────────────
             yield sse({"type": "step", "label": "正在审核报告质量..."})
             review = await asyncio.to_thread(review_report, report_text, plan["dimensions"])
-
-            # Retry once if review fails
-            if not review.get("pass", True) and review.get("issues"):
-                yield sse({"type": "step", "label": "优化报告中..."})
-                prompt2 = _build_competitive_prompt(plan["topic"], plan["dimensions"], context, review["issues"])
-                report_text = await asyncio.to_thread(_call, prompt2, 0.5)
-                review = await asyncio.to_thread(review_report, report_text, plan["dimensions"])
 
             citations = extract_citations(report_text)
 
