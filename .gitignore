@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+
+# Environment — NEVER commit secrets
+.env
+.env.*
+
+# Qdrant local DB
+qdrant_db/
+
+# Data ingestion artifacts
+data/
+
+# macOS
+.DS_Store
+
+# Frontend (handled by frontend/.gitignore too)
+frontend/node_modules/
+frontend/.next/
+frontend/.vercel/

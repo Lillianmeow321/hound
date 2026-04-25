@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+python-dotenv
+openai
+langchain-huggingface
+langchain-qdrant
+qdrant-client
+tavily-python
+sentence-transformers
