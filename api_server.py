@@ -280,7 +280,7 @@ async def competitive_stream(query: str, lang: str = "zh"):
             yield sse({"type": "step", "label": _step_planning})
             yield sse({"type": "anim", "state": "thinking"})
 
-            plan_task = asyncio.create_task(asyncio.to_thread(plan_research, query))
+            plan_task = asyncio.create_task(asyncio.to_thread(plan_research, query, lang))
             while not plan_task.done():
                 try:
                     await asyncio.wait_for(asyncio.shield(plan_task), timeout=10)

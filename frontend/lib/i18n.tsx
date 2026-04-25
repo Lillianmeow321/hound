@@ -26,6 +26,15 @@ export const translations = {
     landingCardSizing: '市场规模测算',
     landingTableHeaders: ['情景', '假设条件', '市场规模（SOM，未来3年）'],
 
+    // Research dimensions (backend returns these in the correct language via lang param)
+    dimensions: {
+      positioning: '产品定位',
+      monetization: '变现模式',
+      userProfile: '用户画像',
+      competition: '竞争格局',
+      growth: '增长策略',
+    },
+
     // Research page
     researchTitle: '投研分析',
     researchSlogan: '最懂投资人与consultant语言风格的小边牧。',
@@ -100,6 +109,15 @@ export const translations = {
     landingCardResearch: 'Research Analysis',
     landingCardSizing: 'Market Sizing',
     landingTableHeaders: ['Scenario', 'Assumptions', 'Market Size (SOM, 3-Year)'],
+
+    // Research dimensions (backend returns these in the correct language via lang param)
+    dimensions: {
+      positioning: 'Product Positioning',
+      monetization: 'Monetization Model',
+      userProfile: 'User Profile',
+      competition: 'Competitive Landscape',
+      growth: 'Growth Strategy',
+    },
 
     // Research page
     researchTitle: 'Research Analysis',

@@ -10,10 +10,27 @@ client = OpenAI(
     base_url="https://api.deepseek.com"
 )
 
-def plan_research(user_query: str) -> dict:
+def plan_research(user_query: str, lang: str = "zh") -> dict:
     """规划Agent：把用户的研究需求拆解成具体维度"""
-    
-    prompt = f"""你是一个资深AI行业研究员。用户想研究一个AI赛道，请将研究需求拆解为5个具体的研究维度。
+
+    if lang == "en":
+        dim_names = [
+            "Product Positioning",
+            "Monetization Model",
+            "User Profile",
+            "Competitive Landscape",
+            "Growth Strategy",
+        ]
+        lang_note = "\nOutput dimension names in English."
+    else:
+        dim_names = ["产品定位", "变现模式", "用户画像", "竞争格局", "增长策略"]
+        lang_note = ""
+
+    dims_json = ",\n    ".join(
+        f'{{"name": "{n}", "query": "具体检索关键词"}}' for n in dim_names
+    )
+
+    prompt = f"""你是一个资深AI行业研究员。用户想研究一个AI赛道，请将研究需求拆解为5个具体的研究维度。{lang_note}
 
 用户需求：{user_query}
 
@@ -21,11 +38,7 @@ def plan_research(user_query: str) -> dict:
 {{
   "topic": "研究主题",
   "dimensions": [
-    {{"name": "产品定位", "query": "具体检索关键词"}},
-    {{"name": "变现模式", "query": "具体检索关键词"}},
-    {{"name": "用户画像", "query": "具体检索关键词"}},
-    {{"name": "竞争格局", "query": "具体检索关键词"}},
-    {{"name": "增长策略", "query": "具体检索关键词"}}
+    {dims_json}
   ]
 }}"""
 
