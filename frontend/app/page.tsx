@@ -6,6 +6,8 @@ import Navbar from '@/components/layout/Navbar'
 import Sidebar from '@/components/layout/Sidebar'
 import InputArea from '@/components/chat/InputArea'
 import ProgressBar, { type DimensionItem } from '@/components/chat/ProgressBar'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import ReportView from '@/components/report/ReportView'
 import BorderCollie from '@/components/animations/BorderCollie'
 import { generateCompetitiveReport, followUpChat } from '@/lib/api'
@@ -79,6 +81,7 @@ export default function CompetitivePage() {
   const [currentQuery, setCurrentQuery] = useState('')
   const [errorMsg, setErrorMsg] = useState('')
   const [dimensions, setDimensions] = useState<DimensionItem[]>([])
+  const [streamingContent, setStreamingContent] = useState('')
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
   const [chatHistory, setChatHistory] = useState<Array<{ role: string; content: string }>>([])
@@ -140,6 +143,7 @@ export default function CompetitivePage() {
     setReport(null)
     setChatHistory([])
     setDimensions([])
+    setStreamingContent('')
     setAnimState('idle')
 
     await generateCompetitiveReport(query, {
@@ -153,11 +157,15 @@ export default function CompetitivePage() {
       onDimensions: names => {
         setDimensions(names.map(name => ({ name, status: 'active' })))
       },
-      onDimDone: name => {
-        setDimensions(prev => prev.map(d => d.name === name ? { ...d, status: 'done' } : d))
+      onDimDone: (name, snippet) => {
+        setDimensions(prev => prev.map(d => d.name === name ? { ...d, status: 'done', snippet } : d))
+      },
+      onToken: content => {
+        setStreamingContent(prev => prev + content)
       },
       onReport: r => {
         console.log('[Hound] report received')
+        setStreamingContent('')
         setReport(r)
         setPhase('done')
         setAnimState('idle')
@@ -188,6 +196,18 @@ export default function CompetitivePage() {
     })
   }
 
+  function handleNewAnalysis() {
+    setReport(null)
+    setPhase('idle')
+    setCurrentQuery('')
+    setChatHistory([])
+    setActiveId(null)
+    setInput('')
+    setErrorMsg('')
+    setDimensions([])
+    setStreamingContent('')
+  }
+
   function handleSelectConversation(conv: Conversation) {
     setCurrentQuery(conv.query)
     setReport(conv.report ?? null)
@@ -196,6 +216,8 @@ export default function CompetitivePage() {
     setChatHistory([])
     setInput('')
     setErrorMsg('')
+    setDimensions([])
+    setStreamingContent('')
   }
 
   function handleExport() {
@@ -244,11 +266,39 @@ export default function CompetitivePage() {
                       </div>
                     </div>
                   )}
-                  <ProgressBar status={progressStep.label} animationState={animState} dimensions={dimensions.length > 0 ? dimensions : undefined} />
+                  {streamingContent ? (
+                    <div className="space-y-4">
+                      {/* Compact status bar while streaming */}
+                      <div className="flex items-center gap-2 text-xs font-inter text-mid-gray">
+                        <span className="flex gap-1 items-end h-3">
+                          <span className="w-1 h-1 rounded-full bg-ink-green animate-dots-1" />
+                          <span className="w-1 h-1 rounded-full bg-ink-green animate-dots-2" />
+                          <span className="w-1 h-1 rounded-full bg-ink-green animate-dots-3" />
+                        </span>
+                        <span>{progressStep.label}</span>
+                      </div>
+                      {/* Streaming report content */}
+                      <div className="prose-report animate-fade-in">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}
+                          components={{
+                            table: ({ children, ...props }) => (
+                              <div className="overflow-x-auto -mx-1">
+                                <table {...props}>{children}</table>
+                              </div>
+                            ),
+                          }}
+                        >
+                          {streamingContent}
+                        </ReactMarkdown>
+                      </div>
+                    </div>
+                  ) : (
+                    <ProgressBar status={progressStep.label} animationState={animState} dimensions={dimensions.length > 0 ? dimensions : undefined} />
+                  )}
                 </>
               )}
               {phase === 'done' && report && (
-                <ReportView report={report} query={currentQuery} onExport={handleExport} />
+                <ReportView report={report} query={currentQuery} onExport={handleExport} onNewAnalysis={handleNewAnalysis} />
               )}
               {chatHistory.length > 0 && (
                 <div className="mt-8 space-y-4 border-t border-border-gray pt-6">

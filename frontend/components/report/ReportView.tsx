@@ -10,9 +10,10 @@ interface Props {
   report: Report
   query: string
   onExport: () => void
+  onNewAnalysis?: () => void
 }
 
-export default function ReportView({ report, query, onExport }: Props) {
+export default function ReportView({ report, query, onExport, onNewAnalysis }: Props) {
   return (
     <div className="animate-fade-in space-y-4">
       {/* Report header */}
@@ -65,6 +66,21 @@ export default function ReportView({ report, query, onExport }: Props) {
 
       {/* Citations */}
       <Citations citations={report.citations} />
+
+      {/* New analysis CTA */}
+      {onNewAnalysis && (
+        <div className="flex flex-col items-center gap-3 pt-8 border-t border-border-gray">
+          <p className="text-xs text-mid-gray font-inter">想换个赛道？让小边牧重新出发！</p>
+          <button
+            onClick={onNewAnalysis}
+            className="flex items-center gap-2 px-6 py-2.5 rounded-xl border-2 border-ink-green
+              text-sm font-inter font-medium text-ink-green
+              hover:bg-ink-green hover:text-cream transition-all duration-200"
+          >
+            🐕 开启新赛道分析
+          </button>
+        </div>
+      )}
     </div>
   )
 }

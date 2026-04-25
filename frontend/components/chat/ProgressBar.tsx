@@ -7,6 +7,7 @@ import type { AnimationState } from '@/lib/types'
 export interface DimensionItem {
   name: string
   status: 'active' | 'done'
+  snippet?: string
 }
 
 interface Props {
@@ -71,29 +72,50 @@ export default function ProgressBar({ status, animationState, dimensions }: Prop
         )}
       </div>
 
-      {/* Dimension chips — only shown during retrieval */}
+      {/* Dimension chips + snippet log — only shown during retrieval */}
       {dimensions && dimensions.length > 0 && (
-        <div className="flex flex-wrap justify-center gap-2 max-w-sm">
-          {dimensions.map(d => (
-            <span
-              key={d.name}
-              className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full font-inter border transition-all duration-500 ${
-                d.status === 'done'
-                  ? 'bg-ink-green/10 text-ink-green border-ink-green/25'
-                  : 'bg-amber-50 text-amber-700 border-amber-200'
-              }`}
-            >
-              {d.status === 'done' ? (
-                <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-                  <path d="M1.5 5l2.5 2.5 4.5-4.5" stroke="currentColor" strokeWidth="1.5"
-                    strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              ) : (
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse inline-block" />
-              )}
-              {d.name}
-            </span>
-          ))}
+        <div className="flex flex-col items-center gap-3 w-full max-w-sm">
+          {/* Chips row */}
+          <div className="flex flex-wrap justify-center gap-2">
+            {dimensions.map(d => (
+              <span
+                key={d.name}
+                className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full font-inter border transition-all duration-500 ${
+                  d.status === 'done'
+                    ? 'bg-ink-green/10 text-ink-green border-ink-green/25'
+                    : 'bg-amber-50 text-amber-700 border-amber-200'
+                }`}
+              >
+                {d.status === 'done' ? (
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                    <path d="M1.5 5l2.5 2.5 4.5-4.5" stroke="currentColor" strokeWidth="1.5"
+                      strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                ) : (
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse inline-block" />
+                )}
+                {d.name}
+              </span>
+            ))}
+          </div>
+
+          {/* Completed count */}
+          <p className="text-[11px] font-inter text-mid-gray">
+            已完成 {dimensions.filter(d => d.status === 'done').length}/{dimensions.length} 个维度
+          </p>
+
+          {/* Snippet feed — appears as dims complete */}
+          {dimensions.some(d => d.snippet) && (
+            <div className="w-full space-y-1 text-left">
+              {dimensions.filter(d => d.snippet).map(d => (
+                <p key={d.name} className="text-[11px] font-inter text-mid-gray leading-relaxed animate-fade-in">
+                  <span className="text-ink-green font-medium">✓ {d.name}</span>
+                  <span className="text-border-gray mx-1">→</span>
+                  {d.snippet}
+                </p>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

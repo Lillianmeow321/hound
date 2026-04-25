@@ -4,6 +4,8 @@ Run: python api_server.py  (or: uvicorn api_server:app --reload)
 """
 import os, sys, json, re
 import asyncio
+import threading
+import time
 import requests
 
 # Run from project root so ./qdrant_db paths resolve
@@ -69,6 +71,24 @@ def _qdrant_search(collection: str, text: str, k: int) -> list:
     )
 
 
+# Simple TTL cache for qdrant results (avoids re-embedding identical queries)
+_search_cache: dict = {}
+_CACHE_TTL = 300  # 5 minutes
+
+def _qdrant_search_cached(collection: str, text: str, k: int) -> list:
+    key = (collection, text, k)
+    now = time.time()
+    if key in _search_cache and now - _search_cache[key][0] < _CACHE_TTL:
+        return _search_cache[key][1]
+    results = _qdrant_search(collection, text, k)
+    _search_cache[key] = (now, results)
+    if len(_search_cache) > 200:
+        cutoff = now - _CACHE_TTL
+        for k2 in [k2 for k2, v in _search_cache.items() if v[0] < cutoff]:
+            del _search_cache[k2]
+    return results
+
+
 def _call(prompt: str, temperature: float = 0.5) -> str:
     resp = _deepseek.chat.completions.create(
         model="deepseek-chat",
@@ -99,9 +119,9 @@ def extract_citations(report: str) -> list:
 
 
 def _retrieve_one_dimension(dim: dict) -> tuple:
-    """Returns (dim_name, docs_list) — runs in a thread."""
+    """Returns (dim_name, docs_list, snippet_str) — runs in a thread."""
     name, query = dim["name"], dim["query"]
-    hits = _qdrant_search("memos", query, k=2)
+    hits = _qdrant_search_cached("memos", query, k=2)
     private = [
         {
             "source": hit.payload.get("metadata", {}).get("source", "").split("/")[-1],
@@ -113,7 +133,14 @@ def _retrieve_one_dimension(dim: dict) -> tuple:
     web = search_web(query, max_results=2)
     for r in web:
         r["type"] = "联网搜索"
-    return name, private + web
+    docs = private + web
+    # Build a short snippet: prefer web result titles as they're most readable
+    snippet = ""
+    if web and web[0].get("title"):
+        snippet = web[0]["title"][:40]
+    elif private and private[0].get("content"):
+        snippet = private[0]["content"][:40].replace("\n", " ").strip()
+    return name, docs, snippet
 
 
 def _build_competitive_prompt(topic: str, dimensions: list, context: str, feedback: list = []) -> str:
@@ -258,10 +285,9 @@ async def competitive_stream(query: str):
                 try:
                     result = await asyncio.to_thread(_retrieve_one_dimension, dim)
                 except Exception:
-                    result = (dim["name"], [])  # empty on error, avoids hanging
+                    result = (dim["name"], [], "")
                 await queue.put(result)
 
-            # ensure_future schedules each coroutine as an independent Task
             for d in plan["dimensions"]:
                 asyncio.ensure_future(retrieve_one(d))
 
@@ -269,9 +295,9 @@ async def competitive_stream(query: str):
             pending = n
             while pending > 0:
                 try:
-                    dim_name, dim_docs = await asyncio.wait_for(queue.get(), timeout=10)
+                    dim_name, dim_docs, dim_snippet = await asyncio.wait_for(queue.get(), timeout=10)
                     retrieved[dim_name] = dim_docs
-                    yield sse({"type": "dim_done", "name": dim_name})
+                    yield sse({"type": "dim_done", "name": dim_name, "snippet": dim_snippet})
                     pending -= 1
                 except asyncio.TimeoutError:
                     yield ": ka\n\n"
@@ -282,18 +308,55 @@ async def competitive_stream(query: str):
                 for doc in docs:
                     context += f"[{doc.get('type','私有知识库')}] 来源：{doc['source']}\n{doc['content']}\n\n"
 
-            # ── 3. Generate report ────────────────────────────────────────────
+            # ── 3. Stream report tokens ───────────────────────────────────────
             yield sse({"type": "step", "label": "正在生成报告..."})
             yield sse({"type": "anim", "state": "thinking"})
 
             prompt = _build_competitive_prompt(plan["topic"], plan["dimensions"], context)
-            report_task = asyncio.create_task(asyncio.to_thread(_call, prompt, 0.5))
-            while not report_task.done():
+            token_queue: asyncio.Queue = asyncio.Queue()
+            event_loop = asyncio.get_running_loop()
+
+            def _stream_deepseek():
                 try:
-                    await asyncio.wait_for(asyncio.shield(report_task), timeout=10)
+                    full = ""
+                    stream = _deepseek.chat.completions.create(
+                        model="deepseek-chat",
+                        messages=[{"role": "user", "content": prompt}],
+                        temperature=0.5,
+                        stream=True,
+                    )
+                    for chunk in stream:
+                        text = chunk.choices[0].delta.content or ""
+                        if text:
+                            full += text
+                            asyncio.run_coroutine_threadsafe(
+                                token_queue.put(("tok", text)), event_loop
+                            )
+                    asyncio.run_coroutine_threadsafe(
+                        token_queue.put(("end", full)), event_loop
+                    )
+                except Exception as e:
+                    asyncio.run_coroutine_threadsafe(
+                        token_queue.put(("err", str(e))), event_loop
+                    )
+
+            threading.Thread(target=_stream_deepseek, daemon=True).start()
+
+            report_text = ""
+            while True:
+                try:
+                    kind, payload = await asyncio.wait_for(token_queue.get(), timeout=10)
                 except asyncio.TimeoutError:
                     yield ": ka\n\n"
-            report_text = report_task.result()
+                    continue
+                if kind == "tok":
+                    report_text += payload
+                    yield sse({"type": "token", "content": payload})
+                elif kind == "end":
+                    report_text = payload
+                    break
+                elif kind == "err":
+                    raise Exception(payload)
 
             # ── 4. Review (no retry — saves ~20s) ────────────────────────────
             yield sse({"type": "step", "label": "正在审核报告质量..."})

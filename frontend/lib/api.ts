@@ -11,7 +11,8 @@ interface SseHandlers {
   onReport: (report: Report) => void
   onError?: (msg: string) => void
   onDimensions?: (names: string[]) => void
-  onDimDone?: (name: string) => void
+  onDimDone?: (name: string, snippet?: string) => void
+  onToken?: (content: string) => void
 }
 
 function listenSse(url: string, handlers: SseHandlers): Promise<void> {
@@ -68,7 +69,11 @@ function listenSse(url: string, handlers: SseHandlers): Promise<void> {
           handlers.onDimensions?.(data.names as string[])
           break
         case 'dim_done':
-          handlers.onDimDone?.(data.name as string)
+          handlers.onDimDone?.(data.name as string, data.snippet as string | undefined)
+          break
+        case 'token':
+          reportContent += data.content as string
+          handlers.onToken?.(data.content as string)
           break
         case 'done':
           clearTimeout(timeoutId)
@@ -112,7 +117,8 @@ export interface StreamOptions {
   onReport: (report: Report) => void
   onError?: (msg: string) => void
   onDimensions?: (names: string[]) => void
-  onDimDone?: (name: string) => void
+  onDimDone?: (name: string, snippet?: string) => void
+  onToken?: (content: string) => void
 }
 
 export async function generateCompetitiveReport(
