@@ -1,4 +1,5 @@
 import os
+from datetime import datetime
 from openai import OpenAI
 from dotenv import load_dotenv
 from planner_agent import plan_research
@@ -12,8 +13,8 @@ client = OpenAI(
 )
 
 def generate_report(topic: str, dimensions: list, retrieved: dict, feedback: list = []) -> str:
-    # 把检索结果整理成文本
-    
+    current_date = datetime.now().strftime("%Y年%m月")
+
     context = ""
     for dim_name, docs in retrieved.items():
         context += f"\n## {dim_name}\n"
@@ -32,13 +33,14 @@ def generate_report(topic: str, dimensions: list, retrieved: dict, feedback: lis
 
 请按以下结构输出报告，严格遵守以下要求：
 
-【数据时效性要求（最重要）】
-- 70%以上的数据和案例必须来自2024年及以后
-- 80%以上的数据和案例必须来自2023年及以后
-- 带有明确年份的引用中，2022年及更早的内容不超过10%
-- 如果参考资料中某条数据早于2023年，只能作为历史背景一笔带过，不能作为核心论据
-- 优先使用联网搜索的最新数据；若知识库数据早于2023年，仅在无更新数据时引用，并注明"（数据来自[年份]，供参考）"
-- 禁止使用"根据2021年/2022年的研究"等过时表述作为主要支撑
+【时效性强制要求】
+1. 报告必须以"{current_date}"作为分析基准日期
+2. 优先使用上下文中【联网搜索】标签下的最新数据
+3. 如果联网数据和你内部知识冲突，必须采用联网数据，并标注脚注
+4. 严禁输出比"{current_date}"早超过6个月的数据作为"近期/最新"
+5. 如果某个数据点联网搜索没返回，宁可不写也不要用过时数据填充
+6. 报告开头不要写"基准日期"或"分析日期"字样
+7. 所有"近期""最新""目前"等词，都必须指向{current_date}的时间段
 
 【数据引用要求】
 - 来自联网搜索的数据，在句子末尾加上脚注标记，格式：[^1] [^2] 依此类推
@@ -65,7 +67,7 @@ def generate_report(topic: str, dimensions: list, retrieved: dict, feedback: lis
 4. 引用来源汇总（列出所有引用的URL）
 
 【写作要求】
-- 时效性要求：报告中引用的数据和案例，至少40%必须来自2025年及以后的信息。优先使用联网搜索返回的最新数据，知识库中2024年以前的数据仅作为背景参考，不能作为核心论据。如果某个维度找不到2025年以后的数据，请在该维度末尾注明"此部分数据待更新"。"""
+- 报告结构和观点表述要简洁专业，不要重复堆砌时效性说明。"""
 
 # 在prompt末尾加
     if feedback:

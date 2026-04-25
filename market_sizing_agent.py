@@ -1,5 +1,6 @@
 import os
 import json
+from datetime import datetime
 from openai import OpenAI
 from dotenv import load_dotenv
 from langchain_huggingface import HuggingFaceEmbeddings
@@ -97,6 +98,7 @@ def retrieve_sizing_references(company_info: str) -> list:
 
 def generate_market_sizing(company_info: str) -> str:
     """生成市场规模测算报告"""
+    current_date = datetime.now().strftime("%Y年%m月")
 
     # 从知识库检索类似案例
     print("🔍 检索类似公司的测算案例...")
@@ -158,12 +160,20 @@ def generate_market_sizing(company_info: str) -> str:
 ## 引用来源
 列出所有联网数据的来源链接。
 
+【时效性强制要求】
+1. 报告必须以"{current_date}"作为分析基准日期
+2. 优先使用上下文中【联网搜索】标签下的最新数据
+3. 如果联网数据和你内部知识冲突，必须采用联网数据，并标注脚注
+4. 严禁输出比"{current_date}"早超过6个月的数据作为"近期/最新"
+5. 如果某个数据点联网搜索没返回，宁可不写也不要用过时数据填充
+6. 报告开头不要写"基准日期"或"分析日期"字样
+7. 所有"近期""最新""目前"等词，都必须指向{current_date}的时间段
+
 【写作要求】
 - 联网数据后面加脚注标记 [^1] [^2]
 - 口吻审慎，保留余地，用"估计""约""参考"等措辞
 - 每个数字都要有来源或推导逻辑，不要凭空捏造
-- 参考知识库案例的测算思路，但数据要用联网搜索的最新数据
-- 时效性要求：报告中引用的数据和案例，至少40%必须来自2025年及以后的信息。优先使用联网搜索返回的最新数据，知识库中2024年以前的数据仅作为背景参考，不能作为核心论据。如果某个维度找不到2025年以后的数据，请在该维度末尾注明"此部分数据待更新"。"""
+- 参考知识库案例的测算思路，但数据要用联网搜索的最新数据"""
 
     print("\n✍️  生成测算报告...")
     response = client.chat.completions.create(
