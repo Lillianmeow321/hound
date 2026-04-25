@@ -30,7 +30,7 @@ _qdrant = QdrantClient(
     url=os.getenv("QDRANT_URL"),
     api_key=os.getenv("QDRANT_API_KEY")
 )
-_embed_model = TextEmbedding(model_name="BAAI/bge-large-zh-v1.5")
+_embed_model = TextEmbedding(model_name="jinaai/jina-embeddings-v2-base-zh")
 _deepseek = OpenAI(api_key=os.getenv("DEEPSEEK_API_KEY"), base_url="https://api.deepseek.com")
 print("✓ 模型加载完成，服务启动中...")
 
