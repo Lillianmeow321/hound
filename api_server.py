@@ -18,26 +18,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from openai import OpenAI
-from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_qdrant import QdrantVectorStore
+from fastembed import TextEmbedding
 from qdrant_client import QdrantClient
 from web_search import search_web
 from planner_agent import plan_research
 from reviewer_agent import review_report
 
 # ─── Shared model init (runs once at startup) ─────────────────────────────────
-print("加载BGE模型...")
+print("加载FastEmbed BGE模型...")
 _qdrant = QdrantClient(
     url=os.getenv("QDRANT_URL"),
     api_key=os.getenv("QDRANT_API_KEY")
 )
-_embeddings = HuggingFaceEmbeddings(
-    model_name="BAAI/bge-large-zh-v1.5",
-    model_kwargs={"device": "cpu"},
-    encode_kwargs={"normalize_embeddings": True},
-)
-_memos_store = QdrantVectorStore(client=_qdrant, collection_name="memos", embedding=_embeddings)
-_sizing_store = QdrantVectorStore(client=_qdrant, collection_name="market_sizing", embedding=_embeddings)
+_embed_model = TextEmbedding(model_name="BAAI/bge-large-zh-v1.5")
 _deepseek = OpenAI(api_key=os.getenv("DEEPSEEK_API_KEY"), base_url="https://api.deepseek.com")
 print("✓ 模型加载完成，服务启动中...")
 
@@ -55,6 +48,19 @@ app.add_middleware(
 # ─── Helpers ─────────────────────────────────────────────────────────────────
 def sse(data: dict) -> str:
     return f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+def _embed(text: str) -> list:
+    return list(_embed_model.embed([text]))[0].tolist()
+
+
+def _qdrant_search(collection: str, text: str, k: int) -> list:
+    return _qdrant.search(
+        collection_name=collection,
+        query_vector=_embed(text),
+        limit=k,
+        with_payload=True,
+    )
 
 
 def _call(prompt: str, temperature: float = 0.5) -> str:
@@ -90,14 +96,14 @@ def _retrieve_dimensions(dimensions: list) -> dict:
     results = {}
     for dim in dimensions:
         name, query = dim["name"], dim["query"]
-        private_docs = _memos_store.similarity_search(query, k=2)
+        hits = _qdrant_search("memos", query, k=2)
         private = [
             {
-                "source": doc.metadata.get("source", "").split("/")[-1],
-                "content": doc.page_content[:300],
+                "source": hit.payload.get("metadata", {}).get("source", "").split("/")[-1],
+                "content": hit.payload.get("page_content", "")[:300],
                 "type": "私有知识库",
             }
-            for doc in private_docs
+            for hit in hits
         ]
         web = search_web(query, max_results=2)
         for r in web:
@@ -325,8 +331,8 @@ async def market_sizing_stream(company_info: str):
             yield sse({"type": "anim", "state": "running"})
 
             def _retrieve_sizing():
-                docs = _sizing_store.similarity_search(company_info, k=4)
-                return "\n\n".join(f"【参考案例】\n{doc.page_content}" for doc in docs)
+                hits = _qdrant_search("market_sizing", company_info, k=4)
+                return "\n\n".join(f"【参考案例】\n{hit.payload.get('page_content', '')}" for hit in hits)
 
             ref_text = await asyncio.to_thread(_retrieve_sizing)
 

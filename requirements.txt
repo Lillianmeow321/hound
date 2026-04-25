@@ -2,8 +2,6 @@ fastapi
 uvicorn[standard]
 python-dotenv
 openai
-langchain-huggingface
-langchain-qdrant
+fastembed
 qdrant-client
 tavily-python
-sentence-transformers
