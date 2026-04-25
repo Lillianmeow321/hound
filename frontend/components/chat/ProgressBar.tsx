@@ -55,13 +55,20 @@ export default function ProgressBar({ status, animationState, dimensions }: Prop
       <BorderCollie state={animationState} size={150} />
 
       {/* Status label */}
-      <div className="flex items-center gap-2 text-sm font-inter text-ink-black">
-        <span>{status}</span>
-        <span className="flex gap-1 items-end h-3">
-          <span className="w-1 h-1 rounded-full bg-ink-green animate-dots-1" />
-          <span className="w-1 h-1 rounded-full bg-ink-green animate-dots-2" />
-          <span className="w-1 h-1 rounded-full bg-ink-green animate-dots-3" />
-        </span>
+      <div className="flex flex-col items-center gap-1">
+        <div className="flex items-center gap-2 text-sm font-inter text-ink-black">
+          <span>{status}</span>
+          <span className="flex gap-1 items-end h-3">
+            <span className="w-1 h-1 rounded-full bg-ink-green animate-dots-1" />
+            <span className="w-1 h-1 rounded-full bg-ink-green animate-dots-2" />
+            <span className="w-1 h-1 rounded-full bg-ink-green animate-dots-3" />
+          </span>
+        </div>
+        {status === '正在生成报告...' && (
+          <p className="text-xs font-inter text-ink-green/70">
+            多agent并行，第一次小边牧跑会有点慢，后面就好了！汪 🐕
+          </p>
+        )}
       </div>
 
       {/* Dimension chips — only shown during retrieval */}
