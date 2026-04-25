@@ -52,6 +52,10 @@ function getProgress(status: string): number {
 export default function ProgressBar({ status, animationState, dimensions }: Props) {
   const [progress, setProgress] = useState(0)
   const { t } = useLanguage()
+  const [showCard, setShowCard] = useState(false)
+  const [cardIndex, setCardIndex] = useState(0)
+  const [cardVisible, setCardVisible] = useState(false)
+  const cards = t.tipCards as readonly string[]
 
   // When dimensions are present, let done-count drive the progress in the 30-60% range
   const dimProgress = dimensions && dimensions.length > 0
@@ -64,6 +68,31 @@ export default function ProgressBar({ status, animationState, dimensions }: Prop
     const timer = setTimeout(() => setProgress(target), 60)
     return () => clearTimeout(timer)
   }, [target])
+
+  // Show tip cards after 10s; cycle every 10s with fade
+  useEffect(() => {
+    let fadeIn: ReturnType<typeof setTimeout>
+    const show = setTimeout(() => {
+      setShowCard(true)
+      fadeIn = setTimeout(() => setCardVisible(true), 50)
+    }, 10000)
+    return () => {
+      clearTimeout(show)
+      clearTimeout(fadeIn)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!showCard) return
+    const cycle = setInterval(() => {
+      setCardVisible(false)
+      setTimeout(() => {
+        setCardIndex(i => (i + 1) % cards.length)
+        setCardVisible(true)
+      }, 500)
+    }, 10000)
+    return () => clearInterval(cycle)
+  }, [showCard, cards.length])
 
   return (
     <div className="flex flex-col items-center gap-5 py-10 animate-fade-in">
@@ -141,6 +170,16 @@ export default function ProgressBar({ status, animationState, dimensions }: Prop
           style={{ width: `${progress}%` }}
         />
       </div>
+
+      {/* Rotating tip cards — appear after 10s */}
+      {showCard && (
+        <div
+          className="max-w-[520px] w-full border border-ink-green/30 rounded-lg bg-cream px-5 py-5 text-center text-sm text-ink-black leading-relaxed"
+          style={{ opacity: cardVisible ? 1 : 0, transition: 'opacity 0.5s ease' }}
+        >
+          {cards[cardIndex]}
+        </div>
+      )}
     </div>
   )
 }

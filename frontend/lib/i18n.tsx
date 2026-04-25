@@ -62,6 +62,14 @@ export const translations = {
     // Errors
     errorPrefix: '连接出错：',
 
+    // Loading tip cards
+    tipCards: [
+      '小边牧正在为你做的事：理解研究方向 → 拆解5个研究维度 → 检索行业知识 → 综合分析 → 质量审核。汪🐾',
+      '为什么报告会有具体的厂商案例？因为Hound在尝试用产业研究的视角讲清楚——一家公司在什么时间做了什么动作，结果是什么。',
+      '等待是值得的：你将得到的不是一份"是什么"的报告，而是一份带因果链路、可以辅助决策的洞察。',
+      '喜欢这个项目的话，欢迎分享给身边的VCer、consultant和互联网从业者～小边牧会很开心 🐕',
+    ],
+
     // Chitchat
     chitchat: [
       '你好你好！汪！🐾',
@@ -127,6 +135,14 @@ export const translations = {
 
     // Errors
     errorPrefix: 'Connection error: ',
+
+    // Loading tip cards
+    tipCards: [
+      "What Hound is doing right now: understanding your topic → breaking it into 5 research dimensions → searching the knowledge base → synthesizing insights → quality review. Woof 🐾",
+      "Why does the report include specific company examples? Hound tries to tell the story from an industry research lens — what a company did, when, and what came next.",
+      "The wait is worth it: you won't get a 'what is this' summary — you'll get a causally-linked analysis that can actually inform investment decisions.",
+      "If you like this project, feel free to share it with VCs, consultants, and operators around you — Hound would be very happy 🐕",
+    ],
 
     // Chitchat
     chitchat: [
