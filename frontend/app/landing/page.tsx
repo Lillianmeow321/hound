@@ -4,6 +4,18 @@ import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import BorderCollie from '@/components/animations/BorderCollie'
 
+function useCollieSize() {
+  const [size, setSize] = useState(80)
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 768px)')
+    const update = () => setSize(mq.matches ? 120 : 80)
+    update()
+    mq.addEventListener('change', update)
+    return () => mq.removeEventListener('change', update)
+  }, [])
+  return size
+}
+
 function useInView(threshold = 0.12) {
   const ref = useRef<HTMLDivElement>(null)
   const [inView, setInView] = useState(false)
@@ -45,6 +57,7 @@ const SIZING_ROWS = [
 
 export default function LandingPage() {
   const router = useRouter()
+  const collieSize = useCollieSize()
   const hero = useInView(0)
   const section2 = useInView(0.08)
   const leftCard = useInView(0.1)
@@ -61,20 +74,20 @@ export default function LandingPage() {
       {/* ── Screen 1: hero ───────────────────────────────────────────── */}
       <section
         ref={hero.ref}
-        className="min-h-screen flex flex-col items-center justify-center px-6 py-24 text-center"
+        className="min-h-screen flex flex-col items-center justify-center px-4 md:px-6 py-16 md:py-24 text-center"
       >
         <div
           className={`flex flex-col items-center gap-7 max-w-md mx-auto
             transition-all duration-700 ease-out
             ${hero.inView ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-6'}`}
         >
-          <BorderCollie state="idle" variant="competitive" size={120} />
+          <BorderCollie state="idle" variant="competitive" size={collieSize} />
 
           <div className="space-y-3">
-            <h1 className="font-playfair text-[2.25rem] font-medium text-ink-black leading-tight tracking-tight">
+            <h1 className="font-playfair text-[1.7rem] md:text-[2.25rem] font-medium text-ink-black leading-tight tracking-tight">
               Hound——边牧分析师
             </h1>
-            <p className="text-base text-ink-green font-inter font-light tracking-wide">
+            <p className="text-sm md:text-base text-ink-green font-inter font-light tracking-wide">
               聪明小狗帮你快快写投资memo！汪
             </p>
           </div>
@@ -106,11 +119,11 @@ export default function LandingPage() {
       {/* ── Screen 2: capability cards ───────────────────────────────── */}
       <section
         ref={section2.ref}
-        className={`px-6 pb-28 pt-4 transition-all duration-700 ease-out
+        className={`px-4 md:px-6 pb-20 md:pb-28 pt-4 transition-all duration-700 ease-out
           ${section2.inView ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}
       >
         <div className="max-w-5xl mx-auto">
-          <h2 className="font-playfair text-[1.9rem] font-medium text-ink-black text-center mb-14 tracking-tight">
+          <h2 className="font-playfair text-[1.5rem] md:text-[1.9rem] font-medium text-ink-black text-center mb-10 md:mb-14 tracking-tight">
             看看边牧能做什么
           </h2>
 

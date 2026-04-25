@@ -23,7 +23,7 @@ const RESEARCH_KEYWORDS = [
   'AI','行业','市场','产品','公司','赛道','竞争','分析','研究','格局','趋势','投资','融资',
   '商业','用户','技术','平台','应用','创业','估值','增长','出海','SaaS','B端','C端',
   '供应链','消费','医疗','教育','金融','能源','汽车','硬件','软件','机器人','大模型',
-  'agent','陪伴','情感','电商','游戏','内容','社交','直播','测算','规模',
+  'agent','陪伴','情感','电商','游戏','内容','社交','直播','测算','规模','二手','戒指',
 ]
 const CHITCHAT_REPLIES = [
   '你好你好！汪！🐾',
@@ -34,7 +34,7 @@ const CHITCHAT_REPLIES = [
 ]
 
 function isChitchat(text: string): boolean {
-  if (text.length > 15) return false
+  if (text.length >= 10) return false
   if (RESEARCH_KEYWORDS.some(kw => text.toLowerCase().includes(kw.toLowerCase()))) return false
   if (/[a-zA-Z]{3,}/.test(text)) return false
   return true
@@ -45,6 +45,7 @@ function randomChitchatReply(): string {
 }
 
 export default function MarketSizingPage() {
+  const [mobileSidebar, setMobileSidebar] = useState(false)
   const [input, setInput] = useState('')
   const [phase, setPhase] = useState<Phase>('idle')
   const [progressStep, setProgressStep] = useState<ProgressStep>({ label: '', status: 'active' })
@@ -83,9 +84,11 @@ export default function MarketSizingPage() {
     if (!input.trim()) return
     const value = input.trim()
     setInput('')
+    console.log('[Hound] market handleSubmit:', value)
 
     // If the mock API is waiting for a follow-up answer, resolve the promise
     if (answerResolverRef.current) {
+      console.log('[Hound] resolving follow-up answer')
       setCurrentFollowUp(null)
       answerResolverRef.current(value)
       answerResolverRef.current = null
@@ -97,12 +100,14 @@ export default function MarketSizingPage() {
 
     // Chitchat guard
     if (isChitchat(value)) {
+      console.log('[Hound] mode: chitchat')
       setChatLog([{ role: 'user', content: value }, { role: 'hound', content: randomChitchatReply() }])
       setPhase('idle')
       return
     }
 
     // Start new analysis
+    console.log('[Hound] mode: new market analysis, calling API...')
     setCurrentQuery(value)
     setPhase('collecting')
     setReport(null)
@@ -112,6 +117,7 @@ export default function MarketSizingPage() {
     await generateMarketSizingReport(value, {
       onFollowUp: (q: FollowUpQuestion) =>
         new Promise<string>(resolve => {
+          console.log('[Hound] follow-up question:', q.question)
           setCurrentFollowUp(q)
           setPhase('collecting')
           answerResolverRef.current = (answer: string) => {
@@ -125,6 +131,7 @@ export default function MarketSizingPage() {
         }),
 
       onStep: (step: ProgressStep) => {
+        console.log('[Hound] step:', step.label)
         setProgressStep(step)
         setPhase('loading')
         setCurrentFollowUp(null)
@@ -133,6 +140,7 @@ export default function MarketSizingPage() {
       onAnimationState: (s: AnimationState) => setAnimState(s),
 
       onReport: (r: Report) => {
+        console.log('[Hound] report received')
         setReport(r)
         setPhase('done')
         setAnimState('idle')
@@ -148,13 +156,15 @@ export default function MarketSizingPage() {
         saveConversation(conv)
       },
 
-      onError: () => {
+      onError: (msg) => {
+        console.error('[Hound] API error:', msg)
         setPhase('idle')
         setAnimState('idle')
         setCurrentFollowUp(null)
         answerResolverRef.current = null
       },
-    }).catch(() => {
+    }).catch((e) => {
+      console.error('[Hound] generateMarketSizingReport threw:', e)
       setPhase('idle')
       setAnimState('idle')
       setCurrentFollowUp(null)
@@ -194,17 +204,19 @@ export default function MarketSizingPage() {
 
   return (
     <div className="flex flex-col h-screen overflow-hidden">
-      <Navbar />
+      <Navbar onMenuClick={() => setMobileSidebar(true)} />
       <div className="flex flex-1 overflow-hidden">
         <Sidebar
           conversations={conversations}
           activeId={activeId}
           onSelect={handleSelectConversation}
+          mobileOpen={mobileSidebar}
+          onMobileClose={() => setMobileSidebar(false)}
         />
 
         <main className="flex-1 flex flex-col overflow-hidden">
           <div className="flex-1 overflow-y-auto">
-            <div className="max-w-3xl mx-auto px-6 pt-8 pb-32 space-y-4">
+            <div className="max-w-3xl mx-auto px-4 md:px-6 pt-6 md:pt-8 pb-32 space-y-4">
 
               {phase === 'idle' && !report && <EmptyState />}
 
@@ -262,7 +274,7 @@ export default function MarketSizingPage() {
             </div>
           </div>
 
-          <div className="border-t border-border-gray bg-cream/95 backdrop-blur-sm px-6 py-4">
+          <div className="border-t border-border-gray bg-cream/95 backdrop-blur-sm px-4 md:px-6 py-3 md:py-4">
             <div className="max-w-3xl mx-auto">
               <InputArea
                 value={input}

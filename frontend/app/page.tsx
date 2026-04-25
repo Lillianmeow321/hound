@@ -18,7 +18,7 @@ const RESEARCH_KEYWORDS = [
   'AI','行业','市场','产品','公司','赛道','竞争','分析','研究','格局','趋势','投资','融资',
   '商业','用户','技术','平台','应用','创业','估值','增长','出海','SaaS','B端','C端',
   '供应链','消费','医疗','教育','金融','能源','汽车','硬件','软件','机器人','大模型',
-  'agent','陪伴','情感','电商','游戏','内容','社交','直播',
+  'agent','陪伴','情感','电商','游戏','内容','社交','直播','二手','戒指',
 ]
 const CHITCHAT_REPLIES = [
   '你好你好！汪！🐾',
@@ -29,7 +29,7 @@ const CHITCHAT_REPLIES = [
 ]
 
 function isChitchat(text: string): boolean {
-  if (text.length > 15) return false
+  if (text.length >= 10) return false
   if (RESEARCH_KEYWORDS.some(kw => text.toLowerCase().includes(kw.toLowerCase()))) return false
   if (/[a-zA-Z]{3,}/.test(text)) return false
   return true
@@ -51,6 +51,7 @@ export default function CompetitivePage() {
     }
   }, [router])
 
+  const [mobileSidebar, setMobileSidebar] = useState(false)
   const [input, setInput] = useState('')
   const [phase, setPhase] = useState<Phase>('idle')
   const [progressStep, setProgressStep] = useState<ProgressStep>({ label: '', status: 'active' })
@@ -83,14 +84,20 @@ export default function CompetitivePage() {
     if (!input.trim() || phase === 'loading') return
     const query = input.trim()
     setInput('')
+    console.log('[Hound] handleSubmit:', query)
 
     /* Follow-up on existing report */
     if (report) {
+      console.log('[Hound] mode: followup')
       setPhase('loading')
       setProgressStep({ label: '正在检索知识库...', status: 'active' })
       setAnimState('running')
-      const answer = await followUpChat(query, report.content)
-      setChatHistory(h => [...h, { role: 'user', content: query }, { role: 'assistant', content: answer }])
+      try {
+        const answer = await followUpChat(query, report.content)
+        setChatHistory(h => [...h, { role: 'user', content: query }, { role: 'assistant', content: answer }])
+      } catch (e) {
+        console.error('[Hound] followup error:', e)
+      }
       setPhase('done')
       setAnimState('idle')
       return
@@ -98,12 +105,14 @@ export default function CompetitivePage() {
 
     /* Chitchat guard */
     if (isChitchat(query)) {
+      console.log('[Hound] mode: chitchat')
       setChatHistory(h => [...h, { role: 'user', content: query }, { role: 'assistant', content: randomChitchatReply() }])
       setPhase('done')
       return
     }
 
     /* New report */
+    console.log('[Hound] mode: new_report, calling API...')
     setCurrentQuery(query)
     setPhase('loading')
     setReport(null)
@@ -111,9 +120,10 @@ export default function CompetitivePage() {
     setAnimState('idle')
 
     await generateCompetitiveReport(query, {
-      onStep: step => setProgressStep(step),
+      onStep: step => { console.log('[Hound] step:', step.label); setProgressStep(step) },
       onAnimationState: s => setAnimState(s),
       onReport: r => {
+        console.log('[Hound] report received')
         setReport(r)
         setPhase('done')
         setAnimState('idle')
@@ -128,8 +138,16 @@ export default function CompetitivePage() {
         setActiveId(conv.id)
         saveConversation(conv)
       },
-      onError: () => { setPhase('idle'); setAnimState('idle') },
-    }).catch(() => { setPhase('idle'); setAnimState('idle') })
+      onError: (msg) => {
+        console.error('[Hound] API error:', msg)
+        setPhase('idle')
+        setAnimState('idle')
+      },
+    }).catch((e) => {
+      console.error('[Hound] generateCompetitiveReport threw:', e)
+      setPhase('idle')
+      setAnimState('idle')
+    })
   }
 
   function handleSelectConversation(conv: Conversation) {
@@ -156,20 +174,31 @@ export default function CompetitivePage() {
 
   return (
     <div className="flex flex-col h-screen overflow-hidden">
-      <Navbar />
+      <Navbar onMenuClick={() => setMobileSidebar(true)} />
       <div className="flex flex-1 overflow-hidden">
         <Sidebar
           conversations={conversations}
           activeId={activeId}
           onSelect={handleSelectConversation}
+          mobileOpen={mobileSidebar}
+          onMobileClose={() => setMobileSidebar(false)}
         />
 
         <main className="flex-1 flex flex-col overflow-hidden">
           <div className="flex-1 overflow-y-auto">
-            <div className="max-w-3xl mx-auto px-6 pt-8 pb-32">
+            <div className="max-w-3xl mx-auto px-4 md:px-6 pt-6 md:pt-8 pb-32">
               {phase === 'idle' && !report && chatHistory.length === 0 && <EmptyState />}
               {phase === 'loading' && (
-                <ProgressBar status={progressStep.label} animationState={animState} />
+                <>
+                  {currentQuery && (
+                    <div className="flex justify-end mb-6 animate-fade-in">
+                      <div className="bg-ink-green/8 border border-ink-green/15 rounded-2xl rounded-tr-sm px-4 py-3 text-sm font-inter text-ink-black max-w-lg">
+                        {currentQuery}
+                      </div>
+                    </div>
+                  )}
+                  <ProgressBar status={progressStep.label} animationState={animState} />
+                </>
               )}
               {phase === 'done' && report && (
                 <ReportView report={report} query={currentQuery} onExport={handleExport} />
@@ -199,7 +228,7 @@ export default function CompetitivePage() {
           </div>
 
           {/* Fixed input dock */}
-          <div className="border-t border-border-gray bg-cream/95 backdrop-blur-sm px-6 py-4">
+          <div className="border-t border-border-gray bg-cream/95 backdrop-blur-sm px-4 md:px-6 py-3 md:py-4">
             <div className="max-w-3xl mx-auto">
               <InputArea
                 value={input}

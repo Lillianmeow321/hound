@@ -46,7 +46,16 @@ export default function ReportView({ report, query, onExport }: Props) {
 
       {/* Markdown content */}
       <div className="prose-report">
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          components={{
+            table: ({ children, ...props }) => (
+              <div className="overflow-x-auto -mx-1">
+                <table {...props}>{children}</table>
+              </div>
+            ),
+          }}
+        >
           {report.content}
         </ReactMarkdown>
       </div>

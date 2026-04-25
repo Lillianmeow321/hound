@@ -62,7 +62,7 @@ export default function InputArea({
       />
 
       <div className="absolute bottom-0 left-0 right-0 flex items-center justify-between px-4 pb-3">
-        <span className="text-[11px] text-mid-gray/70 font-inter select-none">
+        <span className="hidden md:block text-[11px] text-mid-gray/70 font-inter select-none">
           Enter 发送 · Shift+Enter 换行
         </span>
         <button
