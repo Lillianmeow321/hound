@@ -76,6 +76,7 @@ export default function CompetitivePage() {
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
   const [chatHistory, setChatHistory] = useState<Array<{ role: string; content: string }>>([])
+  const [isFollowupLoading, setIsFollowupLoading] = useState(false)
 
   useEffect(() => {
     try {
@@ -100,27 +101,26 @@ export default function CompetitivePage() {
   }
 
   async function handleSubmit() {
-    if (!input.trim() || phase === 'loading') return
+    if (!input.trim() || phase === 'loading' || isFollowupLoading) return
     const query = input.trim()
     setInput('')
     setErrorMsg('')
     console.log('[Hound] handleSubmit:', query)
 
-    /* Follow-up on existing report */
+    /* Follow-up on existing report — inline loading only, no full-page state change */
     if (report) {
       console.log('[Hound] mode: followup')
-      setPhase('loading')
-      setProgressStep({ label: lang === 'en' ? 'Searching knowledge base...' : '正在检索知识库...', status: 'active' })
-      setAnimState('running')
+      setChatHistory(h => [...h, { role: 'user', content: query }])
+      setIsFollowupLoading(true)
       try {
         const answer = await followUpChat(query, report.content, lang)
-        setChatHistory(h => [...h, { role: 'user', content: query }, { role: 'assistant', content: answer }])
+        setChatHistory(h => [...h, { role: 'assistant', content: answer }])
       } catch (e) {
         console.error('[Hound] followup error:', e)
         setErrorMsg(`${lang === 'en' ? 'Follow-up failed: ' : '追问失败：'}${e instanceof Error ? e.message : (lang === 'en' ? 'Unknown error' : '未知错误')}`)
+      } finally {
+        setIsFollowupLoading(false)
       }
-      setPhase('done')
-      setAnimState('idle')
       return
     }
 
@@ -296,7 +296,7 @@ export default function CompetitivePage() {
               {phase === 'done' && report && (
                 <ReportView report={report} query={currentQuery} onExport={handleExport} onNewAnalysis={handleNewAnalysis} />
               )}
-              {chatHistory.length > 0 && (
+              {(chatHistory.length > 0 || isFollowupLoading) && (
                 <div className="mt-8 space-y-4 border-t border-border-gray pt-6">
                   {report && (
                     <p className="text-[11px] text-mid-gray uppercase tracking-widest font-inter">
@@ -315,6 +315,15 @@ export default function CompetitivePage() {
                       )}
                     </div>
                   ))}
+                  {isFollowupLoading && (
+                    <div className="animate-fade-in flex items-center gap-2 py-1">
+                      <span className="flex gap-1 items-end h-4">
+                        <span className="w-1.5 h-1.5 rounded-full bg-ink-green animate-dots-1" />
+                        <span className="w-1.5 h-1.5 rounded-full bg-ink-green animate-dots-2" />
+                        <span className="w-1.5 h-1.5 rounded-full bg-ink-green animate-dots-3" />
+                      </span>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -327,7 +336,7 @@ export default function CompetitivePage() {
                 value={input}
                 onChange={setInput}
                 onSubmit={handleSubmit}
-                disabled={phase === 'loading'}
+                disabled={phase === 'loading' || isFollowupLoading}
                 placeholder={report ? t.inputPlaceholderFollowup : t.inputPlaceholderNew}
                 autoFocus
               />
