@@ -14,9 +14,15 @@ client = OpenAI(
     base_url="https://api.deepseek.com"
 )
 
+FOLLOWUP_MARKERS = ["是什么", "为什么", "怎么", "能不能", "展开", "详细", "什么意思", "能否", "如何", "讲讲", "解释"]
+
 def classify_intent(user_input: str, has_report: bool) -> dict:
     """意图识别：判断用户想做什么"""
     if not has_report:
+        return {"intent": "new_report", "target": user_input}
+
+    # 短路：输入短且无疑问词 → 直接视为新赛道
+    if len(user_input) < 20 and not any(m in user_input for m in FOLLOWUP_MARKERS):
         return {"intent": "new_report", "target": user_input}
 
     prompt = f"""用户正在使用AI研究助手，已经生成了一份研究报告。判断用户的意图。
