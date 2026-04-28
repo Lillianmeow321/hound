@@ -33,6 +33,14 @@ def generate_report(topic: str, dimensions: list, retrieved: dict, feedback: lis
 
 请按以下结构输出报告，严格遵守以下要求：
 
+【时效性硬指标 - 必须达成】
+- 报告中引用的数据点中，至少90%必须来自2025年或2026年
+- 其中至少30%必须来自2026年
+- 严禁引用2024年及更早的数据，除非用作"历史对比"且在该数据点后明确标注"（历史数据）"
+- 数据来源优先级：联网搜索（Tavily返回）> 知识库
+- 如果某个维度联网搜索没返回2025-2026年数据，宁可写"该维度暂无最新公开数据"，也不要用过时数据填充
+- 每个数据点必须标注其时间（如"2026年Q1""截至2025年底"），方便审核
+
 【时效性强制要求】
 1. 报告必须以"{current_date}"作为分析基准日期
 2. 优先使用上下文中【联网搜索】标签下的最新数据
@@ -61,15 +69,14 @@ def generate_report(topic: str, dimensions: list, retrieved: dict, feedback: lis
 - 每条建议简练，不超过150字
 
 报告结构：
-1. 核心结论（3条，每条附2024年以后的具体数据支撑）
-2. 各维度详细分析（每个维度至少一个2023年以后的具体厂商案例）
+1. 核心结论（3条，每条附2025年或2026年的具体数据支撑，并标注时间）
+2. 各维度详细分析（每个维度至少一个2025年以后的具体厂商案例，标注时间）
 3. 战略建议（2-3条，柔和口吻）
 4. 引用来源汇总（列出所有引用的URL）
 
 【写作要求】
 - 报告结构和观点表述要简洁专业，不要重复堆砌时效性说明。"""
 
-# 在prompt末尾加
     if feedback:
         prompt += f"\n\n上一版报告的问题，请重点改进：\n" + "\n".join([f"- {i}" for i in feedback])
 
@@ -98,25 +105,41 @@ if __name__ == "__main__":
     from reviewer_agent import review_report
     
     query = input("请输入研究方向：\n> ").strip()
-    MAX_RETRIES = 2
-    
+    MAX_RETRIES = 3
+
     print("规划研究维度...")
     plan = plan_research(query)
-    
+
     print(f"\n检索知识库...")
     retrieved = retrieve_for_dimensions(plan["dimensions"])
-    
+
+    review = {}
     for attempt in range(MAX_RETRIES):
         print(f"\n生成报告中...（第{attempt+1}次）")
-        
-        # 把上一次审核的问题传给分析Agent
-        feedback = review["issues"] if attempt > 0 else []
+
+        feedback = []
+        if attempt > 0:
+            feedback = list(review.get("issues", []))
+            timeliness = review.get("时效性统计", {})
+            if not timeliness.get("时效性是否达标", True):
+                feedback.append(
+                    f"时效性不达标：2025-2026年数据占比{timeliness.get('2025-2026占比', '未知')}，"
+                    f"2026年数据占比{timeliness.get('2026占比', '未知')}。"
+                    "请针对性地补充2025-2026年（尤其是2026年）的最新数据，"
+                    "并确保每个数据点都标注具体时间。"
+                )
+
         report = generate_report(plan["topic"], plan["dimensions"], retrieved, feedback)
-        
+
         print("\n审核报告质量...")
         review = review_report(report, plan["dimensions"])
         print(f"审核评分：{review['score']}/10")
-        
+        timeliness = review.get("时效性统计", {})
+        if timeliness:
+            print(f"时效性：2025-2026占比{timeliness.get('2025-2026占比','?')}，"
+                  f"2026占比{timeliness.get('2026占比','?')}，"
+                  f"达标：{timeliness.get('时效性是否达标','?')}")
+
         if review["pass"]:
             print("✅ 报告通过审核！")
             print(f"\n💡 如需进一步优化，可以关注以下方向：")
