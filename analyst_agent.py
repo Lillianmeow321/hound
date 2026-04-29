@@ -37,8 +37,8 @@ def generate_report(topic: str, dimensions: list, retrieved: dict, feedback: lis
 - 报告中引用的数据点中，至少90%必须来自2025年或2026年
 - 其中至少30%必须来自2026年
 - 严禁引用2024年及更早的数据，除非用作"历史对比"且在该数据点后明确标注"（历史数据）"
-- 数据来源优先级：联网搜索（Tavily返回）> 知识库
-- 如果某个维度联网搜索没返回2025-2026年数据，宁可写"该维度暂无最新公开数据"，也不要用过时数据填充
+- 数据来源优先级：联网搜索（Tavily返回）> 历史参考 > 私有知识库
+- 如果某个维度只有【历史参考】标签的数据，写1-2句简短分析并明确标注数据时间（如"截至2024年底"），不展开，绝对不写"暂无最新数据"
 - 每个数据点必须标注其时间（如"2026年Q1""截至2025年底"），方便审核
 
 【时效性强制要求】
@@ -75,7 +75,22 @@ def generate_report(topic: str, dimensions: list, retrieved: dict, feedback: lis
 4. 引用来源汇总（列出所有引用的URL）
 
 【写作要求】
-- 报告结构和观点表述要简洁专业，不要重复堆砌时效性说明。"""
+- 报告结构和观点表述要简洁专业，不要重复堆砌时效性说明。
+
+【数据清单 - 必须在报告正文结束后输出】
+紧接正文之后，输出如下格式的数据清单，供程序自动验证时效性，不计入报告展示内容：
+
+__data_inventory__
+[
+  {{"claim": "数据点一句话描述", "year": 数字年份, "dimension": "所属维度名称", "source_type": "联网搜索或历史参考或私有知识库"}},
+  ...
+]
+__end_inventory__
+
+规则：
+- 每个含具体数字、百分比、市场规模、增速、厂商案例的数据点都必须列入
+- year填写数据本身所描述的年份（整数），无法确定年份的填0
+- 【历史参考】来源的数据点source_type填"历史参考"，其余联网搜索的填"联网搜索""""
 
     if feedback:
         prompt += f"\n\n上一版报告的问题，请重点改进：\n" + "\n".join([f"- {i}" for i in feedback])
@@ -120,14 +135,6 @@ if __name__ == "__main__":
         feedback = []
         if attempt > 0:
             feedback = list(review.get("issues", []))
-            timeliness = review.get("时效性统计", {})
-            if not timeliness.get("时效性是否达标", True):
-                feedback.append(
-                    f"时效性不达标：2025-2026年数据占比{timeliness.get('2025-2026占比', '未知')}，"
-                    f"2026年数据占比{timeliness.get('2026占比', '未知')}。"
-                    "请针对性地补充2025-2026年（尤其是2026年）的最新数据，"
-                    "并确保每个数据点都标注具体时间。"
-                )
 
         report = generate_report(plan["topic"], plan["dimensions"], retrieved, feedback)
 

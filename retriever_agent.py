@@ -40,14 +40,26 @@ def retrieve_for_dimensions(dimensions: list) -> dict:
             for doc in private_docs
         ]
         
-        # 联网搜索
+        # 联网搜索：优先拉最近90天（覆盖2026年）
         print(f"  🌐 联网搜索：{name}")
-        web_results = search_web(query, max_results=2)
+        web_results = search_web(query, max_results=3, days=90)
         for r in web_results:
             r["type"] = "联网搜索"
-        
+
+        # 不足2条时补充过去一年的数据，标记为"历史参考"
+        if len(web_results) < 2:
+            print(f"  ⚠️  {name} 近期数据不足({len(web_results)}条)，补充历史搜索...")
+            existing_urls = {r["source"] for r in web_results}
+            fallback = search_web(query, max_results=3, days=365)
+            for r in fallback:
+                if r["source"] not in existing_urls:
+                    r["type"] = "历史参考"
+                    web_results.append(r)
+
+        recent = sum(1 for r in web_results if r["type"] == "联网搜索")
+        hist   = sum(1 for r in web_results if r["type"] == "历史参考")
         results[name] = private_results + web_results
-        print(f"  ✓ {name}：知识库{len(private_results)}条 + 联网{len(web_results)}条")
+        print(f"  ✓ {name}：知识库{len(private_results)}条 + 近期联网{recent}条 + 历史参考{hist}条")
     
     return results
 

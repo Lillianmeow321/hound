@@ -1,4 +1,5 @@
 import os
+import re
 import json
 from openai import OpenAI
 from dotenv import load_dotenv
@@ -10,60 +11,122 @@ client = OpenAI(
     base_url="https://api.deepseek.com"
 )
 
+
+def _parse_inventory(report: str) -> tuple[list, str | None]:
+    """从报告中提取 __data_inventory__ JSON，返回 (数据点列表, 错误信息)。"""
+    match = re.search(r"__data_inventory__\s*(\[.*?\])\s*__end_inventory__", report, re.DOTALL)
+    if not match:
+        return [], "报告未输出__data_inventory__数据清单，无法程序化验证时效性"
+    try:
+        inventory = json.loads(match.group(1))
+        return inventory, None
+    except json.JSONDecodeError as e:
+        return [], f"__data_inventory__格式解析失败：{e}"
+
+
+def _calc_timeliness(inventory: list) -> dict:
+    """程序化计算时效性指标，历史参考且year<2025的数据点不计入分母。"""
+    countable = [
+        p for p in inventory
+        if isinstance(p.get("year"), int) and p["year"] > 0
+        and not (p.get("source_type") == "历史参考" and p["year"] < 2025)
+    ]
+    N = len(countable)
+    if N == 0:
+        return {
+            "总数据点": 0,
+            "2025-2026占比": "N/A",
+            "2026占比": "N/A",
+            "时效性是否达标": False,
+            "_issues": ["有效数据点为0，无法计算时效性"],
+        }
+
+    M = sum(1 for p in countable if p["year"] >= 2025)
+    K = sum(1 for p in countable if p["year"] >= 2026)
+    ratio_2025 = M / N
+    ratio_2026 = K / N
+
+    issues = []
+    if ratio_2025 < 0.9:
+        issues.append(
+            f"时效性不达标：仅{ratio_2025:.0%}的数据来自2025-2026年，要求至少90%"
+        )
+    if ratio_2026 < 0.3:
+        issues.append(
+            f"2026年数据占比不足：仅{ratio_2026:.0%}，要求至少30%"
+        )
+
+    return {
+        "总数据点": N,
+        "2025-2026占比": f"{ratio_2025:.0%}",
+        "2026占比": f"{ratio_2026:.0%}",
+        "时效性是否达标": len(issues) == 0,
+        "_issues": issues,
+    }
+
+
 def review_report(report: str, dimensions: list) -> dict:
-    """审核Agent：检查报告质量，返回是否通过和问题列表"""
-    
+    """审核Agent：内容质量由LLM判断，时效性由Python程序化验证。"""
+
     dim_names = [d["name"] for d in dimensions]
-    
-    prompt = f"""你是一个严格的研究报告审核专家。请审核以下报告是否合格。
+
+    # 去掉 inventory 块再送给 LLM，避免干扰内容审核
+    report_body = re.sub(
+        r"__data_inventory__.*?__end_inventory__", "", report, flags=re.DOTALL
+    ).strip()
+
+    prompt = f"""你是一个严格的研究报告审核专家。请审核以下报告的内容质量是否合格。
 
 需要覆盖的研究维度：{dim_names}
 
 报告内容：
-{report[:6000]}
+{report_body[:6000]}
 
-请检查以下两大类：
-
-【内容质量检查】
+请检查：
 1. 是否覆盖了所有研究维度？
 2. 每个维度是否有实质性内容（不只是说"信息不足"）？
 3. 是否有核心结论和战略建议？
 
-【时效性硬性审核】
-逐条找出报告中所有数据点和案例（包括数字、百分比、市场规模、增速、厂商案例等），统计：
-- 总数据点数量 = N
-- 来自2025年或2026年的数据点数量 = M（数据点有明确时间标注"2025"或"2026"的）
-- 来自2026年的数据点数量 = K（数据点有明确时间标注"2026"的）
-
-判定标准（以下任一条不满足即时效性不达标）：
-- 若 M/N < 90%：时效性不达标，在issues中说明"时效性不达标：仅X%的数据来自2025-2026年，要求至少90%"
-- 若 K/N < 30%：时效性不达标，在issues中说明"2026年数据占比不足：仅X%，要求至少30%"
-- 若存在没有明确时间标注的数据点：时效性不达标，在issues中说明"所有数据点必须标注时间"
-
-"pass"字段须同时满足内容质量和时效性两大类检查才能为true。
-
 严格按以下JSON格式输出，不要有其他文字：
 {{
-  "pass": true或false,
+  "content_pass": true或false,
   "missing_dimensions": ["缺失的维度名称"],
-  "issues": ["具体问题描述"],
+  "content_issues": ["具体内容问题描述"],
   "score": 1到10的评分,
-  "suggestions": ["即使通过审核，还可以在哪些地方进一步优化，每条50字以内，最多3条"],
-  "时效性统计": {{
-    "总数据点": N,
-    "2025-2026占比": "X%",
-    "2026占比": "Y%",
-    "时效性是否达标": true或false
-  }}
+  "suggestions": ["即使通过审核，还可以在哪些地方进一步优化，每条50字以内，最多3条"]
 }}"""
 
     response = client.chat.completions.create(
         model="deepseek-chat",
         messages=[{"role": "user", "content": prompt}],
-        temperature=0.1
+        temperature=0.1,
     )
-    
-    result = response.choices[0].message.content.strip()
-    # 清理可能的markdown代码块
-    result = result.replace("```json", "").replace("```", "").strip()
-    return json.loads(result)
+
+    raw = response.choices[0].message.content.strip()
+    raw = raw.replace("```json", "").replace("```", "").strip()
+    llm_result = json.loads(raw)
+
+    # 程序化时效性验证
+    inventory, parse_error = _parse_inventory(report)
+    if parse_error:
+        timeliness = {
+            "总数据点": 0,
+            "2025-2026占比": "N/A",
+            "2026占比": "N/A",
+            "时效性是否达标": False,
+            "_issues": [parse_error],
+        }
+    else:
+        timeliness = _calc_timeliness(inventory)
+
+    timeliness_issues = timeliness.pop("_issues")
+    all_issues = llm_result.get("content_issues", []) + timeliness_issues
+
+    return {
+        "pass": llm_result["content_pass"] and timeliness["时效性是否达标"],
+        "missing_dimensions": llm_result.get("missing_dimensions", []),
+        "issues": all_issues,
+        "score": llm_result["score"],
+        "suggestions": llm_result.get("suggestions", []),
+        "时效性统计": timeliness,
+    }
