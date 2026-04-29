@@ -65,6 +65,31 @@ def _calc_timeliness(inventory: list) -> dict:
     }
 
 
+def _check_year_frequency(report_body: str) -> dict:
+    """直接扫报告正文的年份词频，独立于模型自报的inventory，防止模型伪造年份。"""
+    years = re.findall(r"\b(202[3-6])\b", report_body)
+    if not years:
+        return {"时效性是否达标": True, "_issues": []}  # 无年份词，跳过
+
+    total = len(years)
+    count_2025_plus = sum(1 for y in years if int(y) >= 2025)
+    count_2026 = sum(1 for y in years if int(y) == 2026)
+    ratio_2025 = count_2025_plus / total
+    ratio_2026 = count_2026 / total
+
+    issues = []
+    if ratio_2025 < 0.9:
+        issues.append(
+            f"正文年份词频不达标：2025-2026年提及占比仅{ratio_2025:.0%}（要求≥90%）"
+            f"，年份分布：{ {y: years.count(y) for y in sorted(set(years))} }"
+        )
+    if ratio_2026 < 0.3:
+        issues.append(
+            f"正文2026年提及占比仅{ratio_2026:.0%}（要求≥30%）"
+        )
+    return {"时效性是否达标": len(issues) == 0, "_issues": issues}
+
+
 def review_report(report: str, dimensions: list) -> dict:
     """审核Agent：内容质量由LLM判断，时效性由Python程序化验证。"""
 
@@ -106,7 +131,7 @@ def review_report(report: str, dimensions: list) -> dict:
     raw = raw.replace("```json", "").replace("```", "").strip()
     llm_result = json.loads(raw)
 
-    # 程序化时效性验证
+    # 验证1：inventory自报年份（检测数据点覆盖率）
     inventory, parse_error = _parse_inventory(report)
     if parse_error:
         timeliness = {
@@ -119,11 +144,17 @@ def review_report(report: str, dimensions: list) -> dict:
     else:
         timeliness = _calc_timeliness(inventory)
 
-    timeliness_issues = timeliness.pop("_issues")
+    # 验证2：正文年份词频（独立验证，防止模型伪造inventory年份）
+    freq_check = _check_year_frequency(report_body)
+
+    timeliness_issues = timeliness.pop("_issues") + freq_check["_issues"]
+    timeliness_pass = timeliness["时效性是否达标"] and freq_check["时效性是否达标"]
+    timeliness["时效性是否达标"] = timeliness_pass
+
     all_issues = llm_result.get("content_issues", []) + timeliness_issues
 
     return {
-        "pass": llm_result["content_pass"] and timeliness["时效性是否达标"],
+        "pass": llm_result["content_pass"] and timeliness_pass,
         "missing_dimensions": llm_result.get("missing_dimensions", []),
         "issues": all_issues,
         "score": llm_result["score"],
